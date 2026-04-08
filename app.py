@@ -802,6 +802,7 @@ def admin_build():
 @app.route("/admin/api/question/edit", methods=["POST"])
 @require_admin
 def admin_edit_question():
+    global EXAMS
     data = request.get_json()
     exam_id = data.get("exam_id")
     qid = data.get("id")
@@ -830,7 +831,6 @@ def admin_edit_question():
         json.dump(bank, f, indent=2)
 
     # Reload exam items
-    global EXAMS
     EXAMS[exam_id] = Exam(exam.dir)
 
     return jsonify({"ok": True})
