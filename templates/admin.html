@@ -3,18 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ENVR3140 Instructor Dashboard</title>
+    <title>{{ exam.title }} — Sessions</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <div class="admin-container">
         <div class="admin-header">
-            <h1>ENVR3140 Instructor Dashboard</h1>
+            <h1>{{ exam.title }}</h1>
             <div class="admin-nav">
-                <a href="/admin" class="nav-link active">Students</a>
-                <a href="/admin/questions" class="nav-link">Questions</a>
+                <a href="/admin" class="nav-link">All Exams</a>
+                <a href="/admin?exam_id={{ exam.id }}" class="nav-link active">Sessions</a>
+                <a href="/admin/questions?exam_id={{ exam.id }}" class="nav-link">Questions</a>
                 <a href="/admin/exam/{{ exam.id }}/settings" class="nav-link">Settings</a>
                 <a href="/admin/export?exam_id={{ exam.id }}" class="nav-link">Export CSV</a>
+                <a href="/exam/{{ exam.id }}" class="nav-link" target="_blank">Take Exam</a>
                 <a href="/admin/logout" class="nav-link">Logout</a>
             </div>
         </div>
@@ -43,52 +45,20 @@
             </div>
         </div>
 
-        <!-- Charts row -->
-        <div class="charts-row">
-            <div class="card chart-card">
-                <h3>Item Bank: Difficulty Tiers</h3>
-                <div class="bar-chart" id="tier-chart">
-                    {% for tier in ['easy', 'medium', 'hard'] %}
-                    {% set count = tiers.get(tier, 0) %}
-                    {% set pct = (count / 1154 * 100)|round(1) %}
-                    <div class="bar-row">
-                        <span class="bar-label">{{ tier }}</span>
-                        <div class="bar-bg"><div class="bar-fill bar-{{ tier }}" style="width:{{ pct }}%"></div></div>
-                        <span class="bar-value">{{ count }}</span>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-            <div class="card chart-card">
-                <h3>Item Bank: Bloom's Taxonomy</h3>
-                <div class="bar-chart" id="blooms-chart">
-                    {% for level in ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'] %}
-                    {% set count = blooms.get(level, 0) %}
-                    {% set pct = (count / 1154 * 100)|round(1) %}
-                    <div class="bar-row">
-                        <span class="bar-label">{{ level }}</span>
-                        <div class="bar-bg"><div class="bar-fill bar-blooms" style="width:{{ pct }}%"></div></div>
-                        <span class="bar-value">{{ count }}</span>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Student table -->
+        <!-- Sessions table -->
         <div class="card">
             <div class="table-header">
-                <h3>Student Sessions</h3>
+                <h3>Sessions</h3>
                 {% if show_archived %}
-                <a href="/admin" class="btn btn-secondary btn-sm">Hide Archived</a>
+                <a href="/admin?exam_id={{ exam.id }}" class="btn btn-secondary btn-sm">Hide Archived</a>
                 {% else %}
-                <a href="/admin?show_archived=1" class="btn btn-secondary btn-sm">Show Archived</a>
+                <a href="/admin?exam_id={{ exam.id }}&show_archived=1" class="btn btn-secondary btn-sm">Show Archived</a>
                 {% endif %}
             </div>
             <table class="admin-table sortable">
                 <thead>
                     <tr>
-                        <th><input type="checkbox" id="select-all" onclick="toggleAll(this)"></th>
+                        <th><label class="toggle toggle-sm"><input type="checkbox" id="select-all" onclick="toggleAll(this)"><span class="toggle-track"><span class="toggle-knob"></span></span></label></th>
                         <th onclick="sortTable(1)">Student</th>
                         <th onclick="sortTable(1)">ID</th>
                         <th onclick="sortTable(2)">Started</th>
@@ -103,7 +73,7 @@
                 <tbody>
                     {% for s in sessions %}
                     <tr>
-                        <td><input type="checkbox" class="session-cb" data-id="{{ s.id }}" onchange="updateCompare()"></td>
+                        <td><label class="toggle toggle-sm"><input type="checkbox" class="session-cb" data-id="{{ s.id }}" onchange="updateCompare()"><span class="toggle-track"><span class="toggle-knob"></span></span></label></td>
                         <td><a href="/admin/session/{{ s.id }}">{{ s.student_name }}</a></td>
                         <td>{{ s.student_id }}</td>
                         <td>{{ s.started_at[:16] if s.started_at else '-' }}</td>

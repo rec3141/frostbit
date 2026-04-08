@@ -39,6 +39,21 @@
                     <textarea id="description" name="description" rows="2">{{ exam.description }}</textarea>
                 </div>
 
+                <div class="form-group">
+                    <label class="toggle">
+                        <input type="checkbox" name="published" {{ 'checked' if exam.published }}>
+                        <span class="toggle-track"><span class="toggle-knob"></span></span>
+                        Published (visible to students)
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="toggle">
+                        <input type="checkbox" name="show_reference" {{ 'checked' if exam.config.get('show_reference', true) }}>
+                        <span class="toggle-track"><span class="toggle-knob"></span></span>
+                        Show reference material (open book)
+                    </label>
+                </div>
+
                 <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
                 <h3 style="margin-bottom:1rem">PDF</h3>
                 <div class="form-row-2col">

@@ -41,6 +41,7 @@
             </div>
         </div>
 
+        {% if exam.show_reference %}
         <!-- Resize handle -->
         <div class="resize-handle" id="resize-handle"></div>
 
@@ -51,6 +52,7 @@
             </div>
             <iframe id="pdf-viewer" src="/static/pdfviewer.html" style="width:100%;border:none;flex:1;background:#525659"></iframe>
         </div>
+        {% endif %}
     </div>
 
     <script>
@@ -64,9 +66,11 @@
 
     // Tell PDF viewer which exam PDF to load
     const pdfViewer = document.getElementById("pdf-viewer");
-    pdfViewer.addEventListener("load", () => {
-        pdfViewer.contentWindow.postMessage({type: "loadPdf", url: "/exam/{{ exam.id }}/pdf"}, "*");
-    });
+    if (pdfViewer) {
+        pdfViewer.addEventListener("load", () => {
+            pdfViewer.contentWindow.postMessage({type: "loadPdf", url: "/exam/{{ exam.id }}/pdf"}, "*");
+        });
+    }
 
     let pdfTargetPage = null;
 
@@ -77,14 +81,13 @@
     });
 
     function navigatePdf(page) {
-        if (!page) return;
+        if (!page || !pdfViewer) return;
         pdfTargetPage = page;
-        const viewer = document.getElementById("pdf-viewer");
         let attempts = 0;
         function tryNav() {
-            if (pdfTargetPage !== page) return; // already ack'd or new page requested
+            if (pdfTargetPage !== page) return;
             try {
-                viewer.contentWindow.postMessage({type: "goToPage", page: page}, "*");
+                pdfViewer.contentWindow.postMessage({type: "goToPage", page: page}, "*");
             } catch(e) {}
             if (attempts++ < 15) setTimeout(tryNav, 300);
         }
@@ -369,6 +372,7 @@
     (() => {
         const handle = document.getElementById("resize-handle");
         const pdfPanel = document.getElementById("pdf-panel");
+        if (!handle || !pdfPanel) return;
         const questionPanel = document.querySelector(".question-panel");
         let dragging = false;
 

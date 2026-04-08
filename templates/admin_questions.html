@@ -11,10 +11,44 @@
         <div class="admin-header">
             <h1>Question Analytics</h1>
             <div class="admin-nav">
-                <a href="/admin" class="nav-link">Students</a>
-                <a href="/admin/questions" class="nav-link active">Questions</a>
-                <a href="/admin/export" class="nav-link">Export CSV</a>
+                <a href="/admin" class="nav-link">All Exams</a>
+                <a href="/admin?exam_id={{ exam.id }}" class="nav-link">Sessions</a>
+                <a href="/admin/questions?exam_id={{ exam.id }}" class="nav-link active">Questions</a>
+                <a href="/admin/exam/{{ exam.id }}/settings" class="nav-link">Settings</a>
+                <a href="/admin/export?exam_id={{ exam.id }}" class="nav-link">Export CSV</a>
                 <a href="/admin/logout" class="nav-link">Logout</a>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="charts-row">
+            <div class="card chart-card">
+                <h3>Difficulty Tiers</h3>
+                <div class="bar-chart" id="tier-chart">
+                    {% for tier in ['easy', 'medium', 'hard'] %}
+                    {% set count = tiers.get(tier, 0) %}
+                    {% set pct = (count / (total_q or 1) * 100)|round(1) %}
+                    <div class="bar-row" data-tier="{{ tier }}">
+                        <span class="bar-label">{{ tier }}</span>
+                        <div class="bar-bg"><div class="bar-fill bar-{{ tier }}" style="width:{{ pct }}%"></div></div>
+                        <span class="bar-value">{{ count }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="card chart-card">
+                <h3>Bloom's Taxonomy</h3>
+                <div class="bar-chart" id="blooms-chart">
+                    {% for level in ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'] %}
+                    {% set count = blooms.get(level, 0) %}
+                    {% set pct = (count / (total_q or 1) * 100)|round(1) %}
+                    <div class="bar-row" data-level="{{ level }}">
+                        <span class="bar-label">{{ level }}</span>
+                        <div class="bar-bg"><div class="bar-fill bar-blooms" style="width:{{ pct }}%"></div></div>
+                        <span class="bar-value">{{ count }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
             </div>
         </div>
 
@@ -66,6 +100,8 @@
                         <th onclick="sortQTable(7)">Student Acc</th>
                         <th onclick="sortQTable(8)">Asked</th>
                         <th onclick="sortQTable(9)">Flags</th>
+                        <th>Active</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -85,6 +121,15 @@
                             <span class="flag-tag flag-{{ flag }}">{{ flag }} ({{ count }})</span>
                             {% endfor %}
                             {% else %}-{% endif %}</td>
+                        <td onclick="event.stopPropagation()">
+                            <label class="toggle toggle-sm">
+                                <input type="checkbox" {{ 'checked' if q.enabled }} onchange="toggleEnabled({{ q.id }}, this.checked)">
+                                <span class="toggle-track"><span class="toggle-knob"></span></span>
+                            </label>
+                        </td>
+                        <td onclick="event.stopPropagation()">
+                            <button class="btn-icon btn-delete" onclick="deleteQuestion({{ q.id }})" title="Delete">x</button>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -205,6 +250,74 @@
             status.textContent = 'Error: ' + result.error;
             status.style.color = 'var(--incorrect-border)';
         }
+    }
+
+    async function toggleEnabled(id, enabled) {
+        await fetch('/admin/api/question/toggle', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({exam_id: '{{ exam.id }}', id: id, enabled: enabled}),
+        });
+        if (questionsById[id]) questionsById[id].enabled = enabled;
+    }
+
+    async function deleteQuestion(id) {
+        if (!confirm(`Delete question ${id}? This cannot be undone.`)) return;
+        const resp = await fetch('/admin/api/question/delete', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({exam_id: '{{ exam.id }}', id: id}),
+        });
+        const result = await resp.json();
+        if (result.ok) {
+            // Remove from data
+            const idx = allQuestions.findIndex(q => q.id === id);
+            if (idx !== -1) allQuestions.splice(idx, 1);
+            delete questionsById[id];
+            // Remove row from table
+            document.querySelectorAll('.q-row').forEach(row => {
+                if (row.cells[0].textContent.trim() == id) row.remove();
+            });
+            closeEditor();
+            updateStats();
+        }
+    }
+
+    function updateStats() {
+        // Recompute tier and bloom's charts from remaining data
+        const tiers = {};
+        const blooms = {};
+        allQuestions.forEach(q => {
+            const t = q.difficulty || 'unknown';
+            tiers[t] = (tiers[t] || 0) + 1;
+            const b = q.blooms_name || 'Unclassified';
+            blooms[b] = (blooms[b] || 0) + 1;
+        });
+        const total = allQuestions.length;
+
+        // Update tier bars
+        ['easy', 'medium', 'hard'].forEach(tier => {
+            const count = tiers[tier] || 0;
+            const pct = total > 0 ? (count / total * 100) : 0;
+            const row = document.querySelector(`#tier-chart .bar-row[data-tier="${tier}"]`);
+            if (row) {
+                row.querySelector('.bar-fill').style.width = pct + '%';
+                row.querySelector('.bar-value').textContent = count;
+            }
+        });
+
+        // Update bloom's bars
+        ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'].forEach(level => {
+            const count = blooms[level] || 0;
+            const pct = total > 0 ? (count / total * 100) : 0;
+            const row = document.querySelector(`#blooms-chart .bar-row[data-level="${level}"]`);
+            if (row) {
+                row.querySelector('.bar-fill').style.width = pct + '%';
+                row.querySelector('.bar-value').textContent = count;
+            }
+        });
+
+        applyFilters();
     }
 
     function applyFilters() {

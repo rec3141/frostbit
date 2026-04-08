@@ -12,7 +12,7 @@ git clone https://github.com/rec3141/frostbit.git
 cd frostbit
 python3 -m venv .venv
 source .venv/bin/activate
-pip install flask anthropic openai
+pip install flask openai
 
 # System dependency (PDF rendering)
 brew install poppler  # macOS
@@ -20,16 +20,21 @@ brew install poppler  # macOS
 
 # Config
 cp .env.example .env.local
-# Edit .env.local with your OpenRouter API key
-
-# Build an exam from a PDF
-python3 -m pipeline.build_exam exams/my-exam/ --pdf /path/to/textbook.pdf
+# Edit .env.local with your OpenRouter API key and instructor token
 
 # Run the server
 python3 app.py --port 8080
+
+# Then visit http://localhost:8080/admin to log in and build your first exam
 ```
 
 Open http://localhost:8080 to take exams, http://localhost:8080/admin for the instructor dashboard.
+
+You can also build exams from the command line:
+
+```bash
+python3 -m pipeline.build_exam exams/my-exam/ --pdf /path/to/textbook.pdf
+```
 
 ## How It Works
 

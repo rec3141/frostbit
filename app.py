@@ -74,6 +74,8 @@ class Exam:
         self.subtitle = self.config.get("subtitle", "")
         self.description = self.config.get("description", "")
         self.pdf_offset = self.config.get("pdf_page_offset", 0)
+        self.published = self.config.get("published", False)
+        self.show_reference = self.config.get("show_reference", True)
         self.cat_config = self.config.get("cat_config", {})
         self.items = self._load_items()
         self.items_by_id = {item.id: item for item in self.items}
@@ -87,6 +89,8 @@ class Exam:
 
         items = []
         for q in raw:
+            if not q.get("enabled", True):
+                continue
             # Build difficulty from available signals
             signals = []
             h = q.get("haiku_difficulty")
@@ -251,13 +255,14 @@ def get_exam_for_session(session_id: str) -> Exam | None:
 # ---------------------------------------------------------------------------
 @app.route("/")
 def index():
-    return render_template("home.html", exams=EXAMS.values())
+    public_exams = [e for e in EXAMS.values() if e.published]
+    return render_template("home.html", exams=public_exams)
 
 
 @app.route("/exam/<exam_id>")
 def exam_landing(exam_id):
     exam = EXAMS.get(exam_id)
-    if not exam:
+    if not exam or (not exam.published and not session.get("is_admin")):
         return redirect(url_for("index"))
     return render_template("index.html", exam=exam)
 
@@ -588,11 +593,13 @@ def admin():
 
     # Item bank stats
     blooms = {}
-    with open(exam.dir / exam.config.get("bank_file", "bank.json")) as f:
-        bank_raw = json.load(f)
-    for q in bank_raw:
-        bl = q.get("blooms_name", "Unclassified")
-        blooms[bl] = blooms.get(bl, 0) + 1
+    bank_path = exam.dir / exam.config.get("bank_file", "bank.json")
+    if bank_path.exists():
+        with open(bank_path) as f:
+            bank_raw = json.load(f)
+        for q in bank_raw:
+            bl = q.get("blooms_name", "Unclassified")
+            blooms[bl] = blooms.get(bl, 0) + 1
 
     tiers = {}
     for item in exam.items:
@@ -686,7 +693,11 @@ def admin_questions():
     if not exam:
         return redirect(url_for("admin"))
 
-    with open(exam.dir / exam.config.get("bank_file", "bank.json")) as f:
+    bank_path = exam.dir / exam.config.get("bank_file", "bank.json")
+    if not bank_path.exists():
+        return render_template("admin_questions.html", questions=[], exam=exam,
+                               tiers={}, blooms={}, total_q=0)
+    with open(bank_path) as f:
         bank = json.load(f)
 
     db = get_db()
@@ -709,6 +720,7 @@ def admin_questions():
             "A": q.get("A", ""), "B": q.get("B", ""), "C": q.get("C", ""),
             "D": q.get("D", ""), "E": q.get("E", ""),
             "answer": q.get("answer", ""),
+            "enabled": q.get("enabled", True),
             "difficulty": q.get("difficulty", "?"),
             "difficulty_score": q.get("difficulty_score"),
             "haiku_difficulty": q.get("haiku_difficulty"),
@@ -723,7 +735,18 @@ def admin_questions():
             "student_accuracy": round(s["accuracy"] * 100, 1) if s.get("accuracy") is not None else None,
         })
 
-    return render_template("admin_questions.html", questions=questions, exam=exam)
+    # Tier and Bloom's distributions
+    tiers = {}
+    blooms = {}
+    for q in bank:
+        t = q.get("difficulty", "unknown")
+        tiers[t] = tiers.get(t, 0) + 1
+        bl = q.get("blooms_name", "Unclassified")
+        blooms[bl] = blooms.get(bl, 0) + 1
+    total_q = len(bank)
+
+    return render_template("admin_questions.html", questions=questions, exam=exam,
+                           tiers=tiers, blooms=blooms, total_q=total_q)
 
 
 @app.route("/admin/build", methods=["GET", "POST"])
@@ -923,6 +946,8 @@ def admin_exam_settings(exam_id):
         config["title"] = request.form.get("title", config["title"])
         config["subtitle"] = request.form.get("subtitle", config.get("subtitle", ""))
         config["description"] = request.form.get("description", config.get("description", ""))
+        config["published"] = request.form.get("published") == "on"
+        config["show_reference"] = request.form.get("show_reference") == "on"
         config["pdf_page_offset"] = int(request.form.get("pdf_offset", 0))
 
         cat = config.get("cat_config", {})
@@ -975,6 +1000,58 @@ def admin_edit_question():
     # Reload exam items
     EXAMS[exam_id] = Exam(exam.dir)
 
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/api/question/toggle", methods=["POST"])
+@require_admin
+def admin_toggle_question():
+    global EXAMS
+    data = request.get_json()
+    exam_id = data.get("exam_id")
+    qid = data.get("id")
+    enabled = data.get("enabled", True)
+    exam = EXAMS.get(exam_id)
+    if not exam:
+        return jsonify({"ok": False, "error": "exam not found"})
+
+    bank_path = exam.dir / exam.config.get("bank_file", "bank.json")
+    with open(bank_path) as f:
+        bank = json.load(f)
+
+    for q in bank:
+        if q["id"] == qid:
+            q["enabled"] = enabled
+            break
+    else:
+        return jsonify({"ok": False, "error": "question not found"})
+
+    with open(bank_path, "w") as f:
+        json.dump(bank, f, indent=2)
+    EXAMS[exam_id] = Exam(exam.dir)
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/api/question/delete", methods=["POST"])
+@require_admin
+def admin_delete_question():
+    global EXAMS
+    data = request.get_json()
+    exam_id = data.get("exam_id")
+    qid = data.get("id")
+    exam = EXAMS.get(exam_id)
+    if not exam:
+        return jsonify({"ok": False, "error": "exam not found"})
+
+    bank_path = exam.dir / exam.config.get("bank_file", "bank.json")
+    with open(bank_path) as f:
+        bank = json.load(f)
+
+    bank = [q for q in bank if q["id"] != qid]
+
+    with open(bank_path, "w") as f:
+        json.dump(bank, f, indent=2)
+    EXAMS[exam_id] = Exam(exam.dir)
     return jsonify({"ok": True})
 
 

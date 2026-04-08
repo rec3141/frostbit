@@ -23,6 +23,11 @@
                     <h3>{{ exam.title }}</h3>
                     <p>{{ exam.subtitle }}</p>
                     <span class="exam-item-count">{{ exam.items|length }} questions</span>
+                    {% if exam.published %}
+                    <span class="status-badge status-done">Published</span>
+                    {% else %}
+                    <span class="status-badge" style="background:var(--border);color:var(--text-muted)">Draft</span>
+                    {% endif %}
                     {% if exam.items|length == 0 %}
                     <a href="/admin/build/{{ exam.id }}/status" class="status-badge status-active" style="margin-left:0.5rem">Building...</a>
                     {% endif %}

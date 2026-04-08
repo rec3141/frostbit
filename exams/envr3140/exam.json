@@ -10,6 +10,8 @@
     "initial_theta": -2.0,
     "se_threshold": 0.3,
     "min_questions": 5,
-    "recency_half_life": 8
-  }
+    "recency_half_life": 8.0
+  },
+  "published": true,
+  "show_reference": true
 }

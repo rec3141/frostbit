@@ -88,10 +88,10 @@ You will receive images of pages from the source material. Generate questions at
 - Every question must be answerable from the provided pages alone
 - Make distractors specific and relevant, not obviously absurd
 - If pages contain maps or figures, create questions about them
-- Questions must be about ECOLOGICAL CONTENT (ecozones, ecoregions, ecodistricts, soils, vegetation, climate, landforms, wildlife, hydrology, etc.)
-- DO NOT ask about publication metadata, authorship, ISBN numbers, report formatting, table of contents, acknowledgements, or administrative details
-- DO NOT ask trivial lookup questions like "What is the publication number?" or "Who wrote the report?" or "How many items are listed on page X?"
-- Every question should test understanding of ecology, geography, or environmental science
+- Questions must be about the SUBJECT MATTER content of the pages, not administrative details
+- DO NOT ask about publication metadata, authorship, ISBN numbers, formatting, table of contents, or acknowledgements
+- DO NOT ask trivial lookup questions like "What is the publication number?" or "Who wrote the document?"
+- Every question should test understanding of the subject matter presented
 
 ## Output format (strict JSON):
 ```json

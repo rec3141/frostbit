@@ -69,6 +69,89 @@
     }
 }
 
+/* Toggle switch */
+.toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding-left: 52px;
+    min-height: 22px;
+}
+
+.toggle input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    left: 0;
+}
+
+.toggle-track {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 40px;
+    height: 22px;
+    background: var(--border);
+    border-radius: 11px;
+    transition: background 0.2s;
+}
+
+.toggle input:checked + .toggle-track {
+    background: var(--accent);
+}
+
+.toggle-knob {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+    pointer-events: none;
+}
+
+.toggle input:checked + .toggle-track > .toggle-knob {
+    transform: translateX(18px);
+}
+
+.toggle-sm {
+    padding-left: 36px;
+    min-height: 18px;
+}
+
+.toggle-sm .toggle-track {
+    width: 32px;
+    height: 18px;
+    border-radius: 9px;
+}
+
+.toggle-sm .toggle-knob {
+    width: 12px;
+    height: 12px;
+    top: 3px;
+    left: 3px;
+}
+
+.toggle-sm input:checked + .toggle-track > .toggle-knob {
+    transform: translateX(14px);
+}
+
+.btn-delete {
+    color: var(--text-faint);
+    font-weight: 700;
+}
+
+.btn-delete:hover {
+    color: var(--incorrect-border);
+    border-color: var(--incorrect-border);
+}
+
 /* Theme toggle */
 .theme-toggle {
     background: none;
