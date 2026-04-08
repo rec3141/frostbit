@@ -16,6 +16,7 @@
             <p class="subtitle">{{ exam.description }}</p>
 
             <form action="/exam/{{ exam.id }}/start" method="POST" class="start-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="form-group">
                     <label for="student_name">Full Name</label>
                     <input type="text" id="student_name" name="student_name" required
@@ -32,13 +33,18 @@
             <div class="divider"><span>or</span></div>
 
             <form action="/exam/{{ exam.id }}/continue" method="POST" class="start-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="form-group">
-                    <label for="continue_id">Continue a previous exam</label>
-                    <input type="text" id="continue_id" name="student_id"
-                           placeholder="Student ID" autocomplete="off">
+                    <label for="continue_id">Continue with resume token</label>
+                    <input type="text" id="continue_id" name="resume_token"
+                           placeholder="Paste your resume token" autocomplete="off">
                 </div>
                 <button type="submit" class="btn btn-secondary">Continue</button>
             </form>
+
+            <p class="subtitle" style="margin-top:1rem;font-size:0.85rem">
+                Save the resume token shown during the exam if you need to come back later.
+            </p>
 
             <div style="margin-top:2rem;text-align:center">
                 <a href="/" style="color:#9ca3af;font-size:0.8rem;text-decoration:none">All Exams</a>

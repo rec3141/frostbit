@@ -7,15 +7,18 @@ and an optional reference.pdf.
 
 Usage:
     source .venv/bin/activate
-    python3 app.py --port 8080 --debug
+    python3 app.py --port 8080
 """
 
 import csv
+import hmac
 import io
 import json
 import os
 import re
+import secrets
 import sqlite3
+import subprocess
 import uuid
 from functools import wraps
 from pathlib import Path
@@ -27,7 +30,7 @@ from flask import (
 
 from cat_engine import (
     CATSession, Item, get_performance_summary, process_answer,
-    select_next_item, should_stop,
+    select_next_item, should_stop, skip_item,
 )
 
 # ---------------------------------------------------------------------------
@@ -48,6 +51,12 @@ if _env_path.exists():
 
 app = Flask(__name__, template_folder=str(PROJECT_DIR / "templates"),
             static_folder=str(PROJECT_DIR / "static"))
+app.config.update(
+    MAX_CONTENT_LENGTH=50 * 1024 * 1024,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("FLASK_SESSION_SECURE") == "1",
+)
 
 # Stable secret so sessions survive server restarts
 _secret_path = PROJECT_DIR / ".flask_secret"
@@ -59,6 +68,64 @@ else:
     os.chmod(str(_secret_path), 0o600)
 
 INSTRUCTOR_AUTH = os.environ.get("INSTRUCTOR_AUTH", "")
+
+
+def get_csrf_token() -> str:
+    token = session.get("_csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["_csrf_token"] = token
+    return token
+
+
+@app.context_processor
+def inject_template_helpers():
+    return {"csrf_token": get_csrf_token}
+
+
+@app.before_request
+def protect_csrf():
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return None
+    if request.endpoint == "static":
+        return None
+
+    expected = get_csrf_token()
+    provided = request.headers.get("X-CSRF-Token")
+    if not provided:
+        provided = request.form.get("csrf_token")
+    if not provided and request.is_json:
+        payload = request.get_json(silent=True) or {}
+        provided = payload.get("csrf_token")
+
+    if provided and hmac.compare_digest(provided, expected):
+        return None
+
+    if request.is_json or request.path.startswith("/api/") or request.path.startswith("/admin/api/"):
+        return jsonify({"error": "csrf validation failed"}), 400
+    return "CSRF validation failed", 400
+
+
+@app.after_request
+def set_security_headers(response):
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "font-src 'self'; "
+        "frame-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "frame-ancestors 'self'; "
+        "worker-src 'self' blob: https://cdnjs.cloudflare.com",
+    )
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +216,74 @@ def load_exams() -> dict[str, Exam]:
     return exams
 
 
+def build_exam_config(exam_id: str, exam_dir: Path, existing_exam: Exam | None = None) -> dict:
+    title = existing_exam.title if existing_exam else exam_id.replace("_", " ").replace("-", " ").title()
+    subtitle = existing_exam.subtitle if existing_exam else "Adaptive Exam"
+    description = existing_exam.description if existing_exam else ""
+    pdf_name = "reference.pdf"
+    if existing_exam and existing_exam.config.get("reference_pdf"):
+        pdf_name = existing_exam.config["reference_pdf"]
+    elif any(exam_dir.glob("*.pdf")):
+        pdf_name = sorted(exam_dir.glob("*.pdf"))[0].name
+
+    cat_config = {
+        "initial_theta": -2.0,
+        "se_threshold": 0.3,
+        "min_questions": 5,
+        "recency_half_life": 8,
+        "skip_budget": 0,
+    }
+    if existing_exam:
+        cat_config.update(existing_exam.cat_config)
+
+    return {
+        "id": exam_id,
+        "title": title,
+        "subtitle": subtitle,
+        "description": description,
+        "bank_file": "bank.json",
+        "reference_pdf": pdf_name,
+        "pdf_page_offset": existing_exam.pdf_offset if existing_exam else 0,
+        "published": existing_exam.published if existing_exam else False,
+        "show_reference": existing_exam.show_reference if existing_exam else True,
+        "cat_config": cat_config,
+    }
+
+
+def get_pdf_page_count(pdf_path: Path) -> int | None:
+    if not pdf_path.exists():
+        return None
+    try:
+        result = subprocess.run(
+            ["pdfinfo", str(pdf_path)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except Exception:
+        return None
+
+    for line in result.stdout.splitlines():
+        if line.startswith("Pages:"):
+            try:
+                return int(line.split(":", 1)[1].strip())
+            except ValueError:
+                return None
+    return None
+
+
+def ensure_exam_config_file(exam: Exam) -> Path:
+    config_path = exam.dir / "exam.json"
+    if not config_path.exists():
+        config = build_exam_config(exam.id, exam.dir, exam)
+        page_count = get_pdf_page_count(exam.pdf_path())
+        if page_count is not None:
+            config["total_pages"] = page_count
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=2)
+    return config_path
+
+
 EXAMS = load_exams()
 print(f"Loaded {len(EXAMS)} exam(s)", flush=True)
 
@@ -193,6 +328,7 @@ def init_db():
             item_id INTEGER NOT NULL,
             chosen TEXT NOT NULL,
             correct BOOLEAN NOT NULL,
+            skipped BOOLEAN NOT NULL DEFAULT 0,
             theta_after REAL,
             se_after REAL,
             elapsed REAL DEFAULT 0,
@@ -202,6 +338,25 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_responses_session ON responses(session_id);
         CREATE INDEX IF NOT EXISTS idx_sessions_exam ON sessions(exam_id);
     """)
+
+    session_columns = {row[1] for row in db.execute("PRAGMA table_info(sessions)").fetchall()}
+    if "resume_token" not in session_columns:
+        db.execute("ALTER TABLE sessions ADD COLUMN resume_token TEXT")
+
+    missing_tokens = db.execute(
+        "SELECT id FROM sessions WHERE resume_token IS NULL OR resume_token = ''"
+    ).fetchall()
+    for session_row in missing_tokens:
+        db.execute(
+            "UPDATE sessions SET resume_token=? WHERE id=?",
+            (secrets.token_urlsafe(16), session_row[0]),
+        )
+
+    response_columns = {row[1] for row in db.execute("PRAGMA table_info(responses)").fetchall()}
+    if "skipped" not in response_columns:
+        db.execute("ALTER TABLE responses ADD COLUMN skipped BOOLEAN NOT NULL DEFAULT 0")
+
+    db.commit()
     db.close()
 
 
@@ -234,11 +389,21 @@ def rebuild_session(session_id: str) -> CATSession | None:
         student_id=sess["student_id"],
         items_pool=list(exam.items),
         theta=exam.cat_config.get("initial_theta", -2.0),
+        routing_theta=exam.cat_config.get("initial_theta", -2.0),
+        resume_token=sess["resume_token"] or "",
+        initial_theta=exam.cat_config.get("initial_theta", -2.0),
+        recency_half_life=exam.cat_config.get("recency_half_life", 8.0),
+        skip_budget=int(exam.cat_config.get("skip_budget", 0) or 0),
     )
     for r in responses:
         item = exam.items_by_id.get(r["item_id"])
         if item:
-            process_answer(cat, item, r["chosen"])
+            cat.current_item_id = item.id
+            if r["skipped"]:
+                skip_item(cat, item)
+            else:
+                process_answer(cat, item, r["chosen"])
+    cat.finished = bool(sess["finished_at"])
     return cat
 
 
@@ -248,6 +413,70 @@ def get_exam_for_session(session_id: str) -> Exam | None:
     if sess:
         return EXAMS.get(sess["exam_id"])
     return None
+
+
+def is_exam_accessible(exam: Exam | None) -> bool:
+    return bool(exam and (exam.published or session.get("is_admin")))
+
+
+def build_student_question_payload(exam: Exam | None, cat: CATSession, item: Item) -> dict:
+    pdf_page = None
+    if item.page_ref and exam:
+        match = re.search(r'(\d+)', item.page_ref)
+        if match:
+            pdf_page = int(match.group(1)) + exam.pdf_offset
+
+    return {
+        "done": False,
+        "question": item.question,
+        "choices": item.choices,
+        "question_number": len(cat.responses) + 1,
+        "theta": round(cat.theta, 2),
+        "se": round(cat.se, 2),
+        "pdf_page": pdf_page,
+        "skip_remaining": max(0, cat.skip_budget - cat.skip_count),
+        "skip_budget": cat.skip_budget,
+    }
+
+
+def create_exam_session(
+    exam: Exam,
+    student_name: str,
+    student_id: str,
+    *,
+    show_answers: bool = False,
+) -> str:
+    session_id = str(uuid.uuid4())
+    resume_token = secrets.token_urlsafe(16)
+    cat = CATSession(
+        student_id=student_id,
+        items_pool=list(exam.items),
+        theta=exam.cat_config.get("initial_theta", -2.0),
+        routing_theta=exam.cat_config.get("initial_theta", -2.0),
+        resume_token=resume_token,
+        initial_theta=exam.cat_config.get("initial_theta", -2.0),
+        recency_half_life=exam.cat_config.get("recency_half_life", 8.0),
+        skip_budget=int(exam.cat_config.get("skip_budget", 0) or 0),
+    )
+    active_sessions[session_id] = cat
+
+    db = get_db()
+    db.execute(
+        "INSERT INTO sessions (id, exam_id, student_id, student_name, resume_token) VALUES (?, ?, ?, ?, ?)",
+        (session_id, exam.id, student_id, student_name, resume_token),
+    )
+    db.commit()
+
+    is_admin = bool(session.get("is_admin"))
+    session.clear()
+    if is_admin:
+        session["is_admin"] = True
+    session["session_id"] = session_id
+    session["student_name"] = student_name
+    session["exam_id"] = exam.id
+    session["resume_token"] = resume_token
+    session["show_answers"] = show_answers
+    return session_id
 
 
 # ---------------------------------------------------------------------------
@@ -262,7 +491,7 @@ def index():
 @app.route("/exam/<exam_id>")
 def exam_landing(exam_id):
     exam = EXAMS.get(exam_id)
-    if not exam or (not exam.published and not session.get("is_admin")):
+    if not is_exam_accessible(exam):
         return redirect(url_for("index"))
     return render_template("index.html", exam=exam)
 
@@ -270,7 +499,7 @@ def exam_landing(exam_id):
 @app.route("/exam/<exam_id>/start", methods=["POST"])
 def start_exam(exam_id):
     exam = EXAMS.get(exam_id)
-    if not exam:
+    if not is_exam_accessible(exam):
         return redirect(url_for("index"))
 
     student_name = request.form.get("student_name", "").strip()
@@ -278,38 +507,25 @@ def start_exam(exam_id):
     if not student_name or not student_id:
         return redirect(url_for("exam_landing", exam_id=exam_id))
 
-    session_id = str(uuid.uuid4())
-    cat = CATSession(
-        student_id=student_id,
-        items_pool=list(exam.items),
-        theta=exam.cat_config.get("initial_theta", -2.0),
-    )
-    active_sessions[session_id] = cat
-
-    db = get_db()
-    db.execute(
-        "INSERT INTO sessions (id, exam_id, student_id, student_name) VALUES (?, ?, ?, ?)",
-        (session_id, exam_id, student_id, student_name),
-    )
-    db.commit()
-
-    session["session_id"] = session_id
-    session["student_name"] = student_name
-    session["exam_id"] = exam_id
+    create_exam_session(exam, student_name, student_id, show_answers=False)
     return redirect(url_for("exam_page", exam_id=exam_id))
 
 
 @app.route("/exam/<exam_id>/continue", methods=["POST"])
 def continue_exam(exam_id):
-    student_id = request.form.get("student_id", "").strip()
-    if not student_id:
+    exam = EXAMS.get(exam_id)
+    if not is_exam_accessible(exam):
+        return redirect(url_for("index"))
+
+    resume_token = request.form.get("resume_token", "").strip()
+    if not resume_token:
         return redirect(url_for("exam_landing", exam_id=exam_id))
 
     db = get_db()
     sess = db.execute(
-        "SELECT * FROM sessions WHERE exam_id=? AND student_id=? AND finished_at IS NULL "
+        "SELECT * FROM sessions WHERE exam_id=? AND resume_token=? AND finished_at IS NULL "
         "ORDER BY started_at DESC LIMIT 1",
-        (exam_id, student_id),
+        (exam_id, resume_token),
     ).fetchone()
 
     if not sess:
@@ -323,17 +539,19 @@ def continue_exam(exam_id):
     session["session_id"] = sess["id"]
     session["student_name"] = sess["student_name"]
     session["exam_id"] = exam_id
+    session["resume_token"] = sess["resume_token"]
+    session["show_answers"] = False
     return redirect(url_for("exam_page", exam_id=exam_id))
 
 
 @app.route("/exam/<exam_id>/take")
 def exam_page(exam_id):
     exam = EXAMS.get(exam_id)
-    if not exam:
+    if not is_exam_accessible(exam):
         return redirect(url_for("index"))
 
     session_id = session.get("session_id")
-    if not session_id:
+    if not session_id or session.get("exam_id") != exam_id:
         return redirect(url_for("exam_landing", exam_id=exam_id))
 
     if session_id not in active_sessions:
@@ -343,14 +561,18 @@ def exam_page(exam_id):
         else:
             return redirect(url_for("exam_landing", exam_id=exam_id))
 
+    if not session.get("resume_token"):
+        session["resume_token"] = active_sessions[session_id].resume_token
+
     return render_template("exam.html", student_name=session.get("student_name", ""),
-                           exam=exam)
+                           exam=exam, resume_token=session.get("resume_token", ""),
+                           show_answers=bool(session.get("show_answers") and session.get("is_admin")))
 
 
 @app.route("/exam/<exam_id>/pdf")
 def serve_pdf(exam_id):
     exam = EXAMS.get(exam_id)
-    if not exam or not exam.has_pdf():
+    if not is_exam_accessible(exam) or not exam.has_pdf():
         return "No PDF", 404
     resp = send_file(str(exam.pdf_path()), mimetype="application/pdf")
     resp.headers["Cache-Control"] = "public, max-age=86400"
@@ -360,11 +582,18 @@ def serve_pdf(exam_id):
 @app.route("/exam/<exam_id>/results")
 def results_page(exam_id):
     session_id = session.get("session_id")
-    if not session_id:
-        return redirect(url_for("index"))
     exam = EXAMS.get(exam_id)
+    if not session_id or session.get("exam_id") != exam_id or not exam:
+        return redirect(url_for("index"))
+    if session_id not in active_sessions:
+        cat = rebuild_session(session_id)
+        if not cat:
+            return redirect(url_for("index"))
+        active_sessions[session_id] = cat
+    if not session.get("resume_token"):
+        session["resume_token"] = active_sessions[session_id].resume_token
     return render_template("results.html", student_name=session.get("student_name", ""),
-                           exam=exam)
+                           exam=exam, resume_token=session.get("resume_token", ""))
 
 
 # ---------------------------------------------------------------------------
@@ -380,34 +609,42 @@ def api_next_question():
     exam = EXAMS.get(exam_id)
     cat = active_sessions[session_id]
 
-    if should_stop(cat):
+    if cat.finished or should_stop(cat):
         return jsonify({"done": True})
+
+    if cat.current_item_id is not None:
+        item = exam.items_by_id.get(cat.current_item_id) if exam else None
+        if not item:
+            cat.current_item_id = None
+            return jsonify({"error": "item not found"}), 400
+        payload = build_student_question_payload(exam, cat, item)
+        if session.get("show_answers") and session.get("is_admin"):
+            payload.update({
+                "item_id": item.id,
+                "answer": item.answer,
+                "difficulty": round(item.difficulty, 2),
+                "tier": item.tier,
+                "blooms_level": item.blooms_level,
+                "blooms_name": item.blooms_name,
+            })
+        return jsonify(payload)
 
     item = select_next_item(cat)
     if not item:
         return jsonify({"done": True})
 
-    pdf_page = None
-    if item.page_ref and exam:
-        m = re.search(r'(\d+)', item.page_ref)
-        if m:
-            pdf_page = int(m.group(1)) + exam.pdf_offset
-
-    return jsonify({
-        "done": False,
-        "item_id": item.id,
-        "question": item.question,
-        "choices": item.choices,
-        "answer": item.answer,
-        "question_number": len(cat.responses) + 1,
-        "theta": round(cat.theta, 2),
-        "se": round(cat.se, 2),
-        "pdf_page": pdf_page,
-        "difficulty": round(item.difficulty, 2),
-        "tier": item.tier,
-        "blooms_level": item.blooms_level,
-        "blooms_name": item.blooms_name,
-    })
+    cat.current_item_id = item.id
+    payload = build_student_question_payload(exam, cat, item)
+    if session.get("show_answers") and session.get("is_admin"):
+        payload.update({
+            "item_id": item.id,
+            "answer": item.answer,
+            "difficulty": round(item.difficulty, 2),
+            "tier": item.tier,
+            "blooms_level": item.blooms_level,
+            "blooms_name": item.blooms_name,
+        })
+    return jsonify(payload)
 
 
 @app.route("/api/answer", methods=["POST"])
@@ -418,25 +655,34 @@ def api_answer():
 
     cat = active_sessions[session_id]
     exam = get_exam_for_session(session_id)
-    data = request.get_json()
-    item_id = data.get("item_id")
+    data = request.get_json(silent=True) or {}
     chosen = data.get("chosen", "").upper()
-    elapsed = data.get("elapsed", 0)
+    try:
+        elapsed = max(0.0, float(data.get("elapsed", 0)))
+    except (TypeError, ValueError):
+        elapsed = 0.0
 
-    if not item_id or chosen not in "ABCDE":
+    if cat.finished:
+        return jsonify({"error": "session already finished"}), 400
+    if cat.current_item_id is None:
+        return jsonify({"error": "no pending question"}), 400
+    if chosen not in "ABCDE":
         return jsonify({"error": "invalid answer"}), 400
 
-    item = exam.items_by_id.get(item_id) if exam else None
+    item = exam.items_by_id.get(cat.current_item_id) if exam else None
     if not item:
         return jsonify({"error": "item not found"}), 400
 
-    resp = process_answer(cat, item, chosen)
+    try:
+        resp = process_answer(cat, item, chosen)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     db = get_db()
     db.execute(
-        "INSERT INTO responses (session_id, item_id, chosen, correct, theta_after, se_after, elapsed) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (session_id, item_id, chosen, resp.correct, resp.theta_after, resp.se_after, elapsed),
+        "INSERT INTO responses (session_id, item_id, chosen, correct, skipped, theta_after, se_after, elapsed) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (session_id, item.id, chosen, resp.correct, 0, resp.theta_after, resp.se_after, elapsed),
     )
     db.commit()
 
@@ -450,6 +696,7 @@ def api_answer():
         "question_number": len(cat.responses),
         "blooms_level": item.blooms_level,
         "blooms_name": item.blooms_name,
+        "skip_remaining": max(0, cat.skip_budget - cat.skip_count),
     }
 
     if done:
@@ -459,11 +706,57 @@ def api_answer():
     return jsonify(result)
 
 
+@app.route("/api/skip", methods=["POST"])
+def api_skip():
+    session_id = session.get("session_id")
+    if not session_id or session_id not in active_sessions:
+        return jsonify({"error": "no active session"}), 400
+
+    cat = active_sessions[session_id]
+    exam = get_exam_for_session(session_id)
+    data = request.get_json(silent=True) or {}
+    try:
+        elapsed = max(0.0, float(data.get("elapsed", 0)))
+    except (TypeError, ValueError):
+        elapsed = 0.0
+
+    if cat.finished:
+        return jsonify({"error": "session already finished"}), 400
+    if cat.current_item_id is None:
+        return jsonify({"error": "no pending question"}), 400
+    if cat.skip_count >= cat.skip_budget:
+        return jsonify({"error": "no skips remaining"}), 400
+
+    item = exam.items_by_id.get(cat.current_item_id) if exam else None
+    if not item:
+        return jsonify({"error": "item not found"}), 400
+
+    try:
+        resp = skip_item(cat, item)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    db = get_db()
+    db.execute(
+        "INSERT INTO responses (session_id, item_id, chosen, correct, skipped, theta_after, se_after, elapsed) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (session_id, item.id, resp.chosen, resp.correct, 1, resp.theta_after, resp.se_after, elapsed),
+    )
+    db.commit()
+
+    return jsonify({
+        "skipped": True,
+        "skip_remaining": max(0, cat.skip_budget - cat.skip_count),
+    })
+
+
 @app.route("/api/finish", methods=["POST"])
 def api_finish():
     session_id = session.get("session_id")
     if not session_id or session_id not in active_sessions:
         return jsonify({"error": "no active session"}), 400
+    if active_sessions[session_id].finished:
+        return jsonify({"done": True, "summary": get_performance_summary(active_sessions[session_id])})
     summary = finish_session(session_id)
     return jsonify({"done": True, "summary": summary})
 
@@ -479,7 +772,7 @@ def api_history():
 
     db = get_db()
     db_responses = db.execute(
-        "SELECT elapsed, item_id FROM responses WHERE session_id=? ORDER BY answered_at",
+        "SELECT elapsed, item_id, skipped FROM responses WHERE session_id=? ORDER BY answered_at",
         (session_id,),
     ).fetchall()
 
@@ -487,29 +780,44 @@ def api_history():
     for i, r in enumerate(cat.responses):
         elapsed = db_responses[i]["elapsed"] if i < len(db_responses) else (i + 1) * 15
         item_id = db_responses[i]["item_id"] if i < len(db_responses) else None
+        skipped = bool(db_responses[i]["skipped"]) if i < len(db_responses) else False
+        if skipped:
+            continue
         item = exam.items_by_id.get(item_id) if exam and item_id else None
         history.append({
-            "question": i + 1,
+            "question": len(history) + 1,
             "theta": round(r.theta_after, 2),
             "correct": r.correct,
             "elapsed": elapsed or (i + 1) * 15,
             "blooms_level": item.blooms_level if item else 0,
             "blooms_name": item.blooms_name if item else "",
         })
-    return jsonify({"history": history, "theta": round(cat.theta, 2)})
+    return jsonify({
+        "history": history,
+        "theta": round(cat.theta, 2),
+        "skip_remaining": max(0, cat.skip_budget - cat.skip_count),
+        "skip_budget": cat.skip_budget,
+    })
 
 
 @app.route("/api/results")
 def api_results():
     session_id = session.get("session_id")
-    if not session_id or session_id not in active_sessions:
+    if not session_id:
         return jsonify({"error": "no active session"}), 400
+    if session_id not in active_sessions:
+        cat = rebuild_session(session_id)
+        if not cat:
+            return jsonify({"error": "no active session"}), 400
+        active_sessions[session_id] = cat
     cat = active_sessions[session_id]
     return jsonify(get_performance_summary(cat))
 
 
 def finish_session(session_id: str) -> dict:
     cat = active_sessions[session_id]
+    cat.finished = True
+    cat.current_item_id = None
     summary = get_performance_summary(cat)
     db = get_db()
     db.execute(
@@ -520,6 +828,27 @@ def finish_session(session_id: str) -> dict:
     )
     db.commit()
     return summary
+
+
+def finish_incomplete_sessions_for_exam(exam_id: str) -> int:
+    db = get_db()
+    rows = db.execute(
+        "SELECT id FROM sessions WHERE exam_id=? AND finished_at IS NULL",
+        (exam_id,),
+    ).fetchall()
+
+    finished_count = 0
+    for row in rows:
+        session_id = row["id"]
+        if session_id not in active_sessions:
+            cat = rebuild_session(session_id)
+            if not cat:
+                continue
+            active_sessions[session_id] = cat
+        finish_session(session_id)
+        finished_count += 1
+
+    return finished_count
 
 
 # ---------------------------------------------------------------------------
@@ -539,16 +868,17 @@ def admin_login():
     error = None
     if request.method == "POST":
         token = request.form.get("token", "").strip()
-        if token and token == INSTRUCTOR_AUTH:
+        if token and INSTRUCTOR_AUTH and hmac.compare_digest(token, INSTRUCTOR_AUTH):
+            session.clear()
             session["is_admin"] = True
             return redirect(url_for("admin"))
         error = "Invalid token"
     return render_template("admin_login.html", error=error)
 
 
-@app.route("/admin/logout")
+@app.route("/admin/logout", methods=["POST"])
 def admin_logout():
-    session.pop("is_admin", None)
+    session.clear()
     return redirect(url_for("admin_login"))
 
 
@@ -634,6 +964,7 @@ def admin_session(session_id):
             "chosen": r["chosen"],
             "correct_answer": item.answer if item else "?",
             "correct": bool(r["correct"]),
+            "skipped": bool(r["skipped"]),
             "theta_after": r["theta_after"],
             "elapsed": r["elapsed"],
             "difficulty": round(item.difficulty, 2) if item else None,
@@ -670,7 +1001,7 @@ def admin_trajectory(session_id):
     db = get_db()
     sess = db.execute("SELECT student_name FROM sessions WHERE id=?", (session_id,)).fetchone()
     responses = db.execute(
-        "SELECT theta_after, correct, elapsed FROM responses WHERE session_id=? ORDER BY answered_at",
+        "SELECT theta_after, correct, elapsed, skipped FROM responses WHERE session_id=? ORDER BY answered_at",
         (session_id,),
     ).fetchall()
     return jsonify({
@@ -678,7 +1009,7 @@ def admin_trajectory(session_id):
         "name": sess["student_name"] if sess else "?",
         "points": [
             {"q": i + 1, "theta": r["theta_after"], "correct": bool(r["correct"]), "elapsed": r["elapsed"]}
-            for i, r in enumerate(responses)
+            for i, r in enumerate([row for row in responses if not row["skipped"]])
         ],
     })
 
@@ -705,7 +1036,7 @@ def admin_questions():
         SELECT r.item_id, COUNT(*) as times_asked, SUM(r.correct) as times_correct,
                AVG(r.correct) as accuracy
         FROM responses r JOIN sessions s ON r.session_id = s.id
-        WHERE s.exam_id = ?
+        WHERE s.exam_id = ? AND COALESCE(r.skipped, 0) = 0
         GROUP BY r.item_id
     """, (exam_id,)).fetchall()
     stats_map = {r["item_id"]: dict(r) for r in q_stats}
@@ -753,7 +1084,6 @@ def admin_questions():
 @require_admin
 def admin_build():
     global EXAMS
-    import subprocess
     error = None
     success = None
 
@@ -784,17 +1114,7 @@ def admin_build():
             pdf_file.save(str(pdf_path))
 
             # Get page count
-            total_pages = None
-            try:
-                result = subprocess.run(
-                    ["pdfinfo", str(pdf_path)], capture_output=True, text=True
-                )
-                for line in result.stdout.splitlines():
-                    if line.startswith("Pages:"):
-                        total_pages = int(line.split(":")[1].strip())
-                        break
-            except Exception:
-                pass
+            total_pages = get_pdf_page_count(pdf_path)
 
             # Auto-detect PDF page offset by finding first printed page number
             detected_offset = 0
@@ -839,6 +1159,7 @@ def admin_build():
                     "se_threshold": 0.3,
                     "min_questions": 5,
                     "recency_half_life": 8,
+                    "skip_budget": 0,
                 },
             }
             with open(exam_dir / "exam.json", "w") as f:
@@ -928,6 +1249,19 @@ def admin_build_status(exam_id):
                            log_tail=log_tail)
 
 
+@app.route("/admin/exam/<exam_id>/take")
+@require_admin
+def admin_take_exam(exam_id):
+    exam = EXAMS.get(exam_id)
+    if not exam:
+        return redirect(url_for("admin"))
+
+    student_name = f"Instructor Test ({exam_id})"
+    student_id = f"admin-test-{uuid.uuid4().hex[:8]}"
+    create_exam_session(exam, student_name, student_id, show_answers=True)
+    return redirect(url_for("exam_page", exam_id=exam_id))
+
+
 @app.route("/admin/exam/<exam_id>/settings", methods=["GET", "POST"])
 @require_admin
 def admin_exam_settings(exam_id):
@@ -936,12 +1270,14 @@ def admin_exam_settings(exam_id):
     if not exam:
         return redirect(url_for("admin"))
 
-    config_path = exam.dir / "exam.json"
+    config_path = ensure_exam_config_file(exam)
     saved = False
 
     if request.method == "POST":
         with open(config_path) as f:
             config = json.load(f)
+
+        was_published = bool(config.get("published", False))
 
         config["title"] = request.form.get("title", config["title"])
         config["subtitle"] = request.form.get("subtitle", config.get("subtitle", ""))
@@ -953,6 +1289,7 @@ def admin_exam_settings(exam_id):
         cat = config.get("cat_config", {})
         cat["initial_theta"] = float(request.form.get("initial_theta", -2.0))
         cat["recency_half_life"] = float(request.form.get("half_life", 8))
+        cat["skip_budget"] = max(0, int(request.form.get("skip_budget", 0) or 0))
         config["cat_config"] = cat
 
         with open(config_path, "w") as f:
@@ -961,16 +1298,37 @@ def admin_exam_settings(exam_id):
         # Reload
         EXAMS[exam_id] = Exam(exam.dir)
         exam = EXAMS[exam_id]
+
+        if was_published and not config["published"]:
+            finish_incomplete_sessions_for_exam(exam_id)
+
         saved = True
 
-    return render_template("admin_exam_settings.html", exam=exam, saved=saved)
+    with open(config_path) as f:
+        config = json.load(f)
+    if config.get("total_pages") in (None, "", "?"):
+        page_count = get_pdf_page_count(exam.pdf_path())
+        if page_count is not None:
+            config["total_pages"] = page_count
+            with open(config_path, "w") as f:
+                json.dump(config, f, indent=2)
+            EXAMS[exam_id] = Exam(exam.dir)
+            exam = EXAMS[exam_id]
+
+    demo_item_difficulties = [round(item.difficulty, 3) for item in exam.items]
+    return render_template(
+        "admin_exam_settings.html",
+        exam=exam,
+        saved=saved,
+        demo_item_difficulties=demo_item_difficulties,
+    )
 
 
 @app.route("/admin/api/question/edit", methods=["POST"])
 @require_admin
 def admin_edit_question():
     global EXAMS
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     exam_id = data.get("exam_id")
     qid = data.get("id")
     exam = EXAMS.get(exam_id)
@@ -1007,7 +1365,7 @@ def admin_edit_question():
 @require_admin
 def admin_toggle_question():
     global EXAMS
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     exam_id = data.get("exam_id")
     qid = data.get("id")
     enabled = data.get("enabled", True)
@@ -1036,7 +1394,7 @@ def admin_toggle_question():
 @require_admin
 def admin_delete_question():
     global EXAMS
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     exam_id = data.get("exam_id")
     qid = data.get("id")
     exam = EXAMS.get(exam_id)
@@ -1066,7 +1424,7 @@ def admin_export():
     rows = db.execute("""
         SELECT s.student_name, s.student_id, s.exam_id, s.started_at, s.finished_at,
                s.theta, s.se, s.total_questions, s.correct, s.estimated_ability,
-               r.item_id, r.chosen, r.correct as is_correct, r.theta_after, r.elapsed
+               r.item_id, r.chosen, r.correct as is_correct, r.skipped, r.theta_after, r.elapsed
         FROM sessions s
         LEFT JOIN responses r ON s.id = r.session_id
         WHERE (? IS NULL OR s.exam_id = ?)
@@ -1077,7 +1435,7 @@ def admin_export():
     writer = csv.writer(output)
     writer.writerow(["student_name", "student_id", "exam_id", "started_at", "finished_at",
                      "final_theta", "final_se", "total_questions", "total_correct",
-                     "estimated_ability", "item_id", "chosen", "is_correct",
+                     "estimated_ability", "item_id", "chosen", "is_correct", "skipped",
                      "theta_after", "elapsed_seconds"])
     for r in rows:
         writer.writerow(list(r))
@@ -1099,4 +1457,5 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=5000)
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
-    app.run(host="0.0.0.0", port=args.port, debug=args.debug)
+    host = "127.0.0.1" if args.debug else "0.0.0.0"
+    app.run(host=host, port=args.port, debug=args.debug)

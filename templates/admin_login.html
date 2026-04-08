@@ -11,6 +11,7 @@
         <div class="card start-card">
             <h1>Instructor Access</h1>
             <form action="/admin/login" method="POST" class="start-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 {% if error %}
                 <div class="error-msg">{{ error }}</div>
                 {% endif %}

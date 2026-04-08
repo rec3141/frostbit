@@ -367,6 +367,22 @@ body {
     cursor: default;
 }
 
+.choice-skip {
+    justify-content: space-between;
+    border-style: dashed;
+    color: var(--text-faint);
+    font-size: 0.85rem;
+}
+
+.choice-skip:hover:not(:disabled) {
+    border-color: var(--text-muted);
+    background: var(--bg);
+}
+
+.choice-skip:disabled {
+    opacity: 0.4;
+}
+
 .choice-btn.correct {
     border-color: var(--correct-border);
     background: var(--correct-bg);
@@ -433,6 +449,21 @@ body {
     font-size: 1.4rem;
     font-weight: 700;
     color: #2563eb;
+}
+
+.chart-toggle {
+    background: none;
+    border: none;
+    color: var(--text-faint);
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+}
+
+.chart-toggle:hover {
+    color: var(--text);
+    background: var(--border);
 }
 
 #skill-chart {
@@ -716,7 +747,28 @@ body {
 }
 
 .nav-link:hover { background: #e5e7eb; }
-.nav-link.active { background: #2563eb; color: #fff; }
+.nav-link.active { background: var(--accent); color: #fff; }
+
+.nav-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font: inherit;
+    padding: 0.4rem 1rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text);
+}
+
+.nav-btn:hover {
+    background: #e5e7eb;
+}
+
+.admin-nav form {
+    display: inline-flex;
+    margin: 0;
+}
 
 .error-msg {
     background: #fee2e2;

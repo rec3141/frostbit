@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>ENVR3140 Exam</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="/static/theme.js"></script>
@@ -17,9 +18,18 @@
                 <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()"></button>
                 <button class="btn btn-finish" id="finish-btn" onclick="finishExam()">Finished</button>
             </div>
+            <div style="margin:0.5rem 0 0.75rem;color:var(--text-muted);font-size:0.85rem">
+                Resume token: <code>{{ resume_token }}</code>
+            </div>
 
             <div class="card exam-card" id="question-card">
                 <div class="question-text" id="question-text">Loading...</div>
+                {% if show_answers %}
+                <div class="card" id="debug-card" style="margin:0 0 1rem;background:rgba(37,99,235,0.08);border:1px solid rgba(37,99,235,0.2)">
+                    <strong>Instructor Test Mode</strong>
+                    <div id="debug-text" style="margin-top:0.35rem;color:var(--text-muted)"></div>
+                </div>
+                {% endif %}
                 <div class="choices" id="choices"></div>
                 <div class="feedback" id="feedback"></div>
                 <button class="btn btn-primary" id="next-btn" style="display:none">Next Question</button>
@@ -29,15 +39,16 @@
                 <div class="loading">Loading next question...</div>
             </div>
 
-            <div class="card skill-chart-card">
+            <div class="card skill-chart-card" id="chart-card">
                 <div class="skill-chart-header">
-                    <span class="skill-chart-title">Challenge Level</span>
+                    <span class="skill-chart-title" style="cursor:pointer" onclick="toggleChart()">Challenge Level</span>
+                    <button class="chart-toggle" id="chart-toggle" onclick="toggleChart()" title="Hide/show chart">&#x25BC;</button>
                 </div>
                 <canvas id="skill-chart" width="700" height="160"></canvas>
             </div>
 
             <div class="keyboard-hint">
-                <kbd>A</kbd>-<kbd>E</kbd> to answer &middot; <kbd>Enter</kbd> for next
+                <kbd>A</kbd>-<kbd>E</kbd> to answer &middot; <kbd>F</kbd> to skip &middot; <kbd>Enter</kbd> for next
             </div>
         </div>
 
@@ -63,18 +74,36 @@
         thetaHistory: [],
         startTime: Date.now(),
     };
+    const appOrigin = window.location.origin;
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+    const showAnswers = {{ "true" if show_answers else "false" }};
+
+    function updateSkipUi(skipRemaining, skipBudget) {
+        const button = document.getElementById("skip-btn");
+        if (!button) return;
+        const remaining = Math.max(0, Number(skipRemaining || 0));
+        if (!skipBudget) return;
+        if (remaining > 0) {
+            button.textContent = `Skip (${remaining} left)`;
+            button.disabled = state.answered;
+        } else {
+            button.textContent = "No skips remaining";
+            button.disabled = true;
+        }
+    }
 
     // Tell PDF viewer which exam PDF to load
     const pdfViewer = document.getElementById("pdf-viewer");
     if (pdfViewer) {
         pdfViewer.addEventListener("load", () => {
-            pdfViewer.contentWindow.postMessage({type: "loadPdf", url: "/exam/{{ exam.id }}/pdf"}, "*");
+            pdfViewer.contentWindow.postMessage({type: "loadPdf", url: "/exam/{{ exam.id }}/pdf"}, appOrigin);
         });
     }
 
     let pdfTargetPage = null;
 
     window.addEventListener("message", (e) => {
+        if (e.origin !== appOrigin) return;
         if (e.data && e.data.type === "pageRendered") {
             pdfTargetPage = null; // ack received, stop retrying
         }
@@ -87,7 +116,7 @@
         function tryNav() {
             if (pdfTargetPage !== page) return;
             try {
-                pdfViewer.contentWindow.postMessage({type: "goToPage", page: page}, "*");
+                pdfViewer.contentWindow.postMessage({type: "goToPage", page: page}, appOrigin);
             } catch(e) {}
             if (attempts++ < 15) setTimeout(tryNav, 300);
         }
@@ -120,6 +149,7 @@
 
         state.currentItem = data;
         state.questionNumber = data.question_number;
+        updateSkipUi(data.skip_remaining, data.skip_budget);
 
         // Guard against malformed response
         if (!data.question || !data.choices) {
@@ -130,6 +160,11 @@
 
         document.getElementById("progress").textContent = `Question ${data.question_number}`;
         document.getElementById("question-text").textContent = data.question;
+        if (showAnswers) {
+            const blooms = data.blooms_name || '?';
+            document.getElementById("debug-text").textContent =
+                `Item #${data.item_id} | answer ${data.answer} | tier ${data.tier} | diff ${data.difficulty} | Bloom's ${blooms}`;
+        }
 
         // Navigate PDF to source page
         if (data.pdf_page) {
@@ -142,19 +177,34 @@
             const btn = document.createElement("button");
             btn.className = "choice-btn";
             btn.dataset.letter = letter;
-            btn.innerHTML = `<span class="choice-letter">${letter}</span> ${text}`;
+            const letterSpan = document.createElement("span");
+            letterSpan.className = "choice-letter";
+            letterSpan.textContent = letter;
+            btn.appendChild(letterSpan);
+            btn.appendChild(document.createTextNode(` ${text}`));
             btn.addEventListener("click", () => submitAnswer(letter));
             choicesDiv.appendChild(btn);
         }
 
-        // Debug: highlight correct answer and show item info
-        document.querySelectorAll(".choice-btn").forEach(btn => {
-            if (btn.dataset.letter === data.answer) {
-                btn.style.outline = "2px dashed #16a34a";
-            }
-        });
-        document.getElementById("progress").textContent =
-            `Q${data.question_number}  [#${data.item_id} ${data.tier} diff=${data.difficulty} pdf=${data.pdf_page}]`;
+        // Add skip button at the end of choices
+        const skipBtn = document.createElement("button");
+        skipBtn.id = "skip-btn";
+        skipBtn.className = "choice-btn choice-skip";
+        skipBtn.addEventListener("click", (e) => { e.stopPropagation(); skipQuestion(); });
+        const remaining = Math.max(0, Number(data.skip_remaining || 0));
+        const skipText = document.createElement("span");
+        if (remaining > 0) {
+            skipText.textContent = `Skip (${remaining} left)`;
+        } else {
+            skipText.textContent = "No skips remaining";
+            skipBtn.disabled = true;
+        }
+        skipBtn.appendChild(skipText);
+        const skipKey = document.createElement("span");
+        skipKey.className = "choice-letter";
+        skipKey.textContent = "F";
+        skipBtn.appendChild(skipKey);
+        choicesDiv.appendChild(skipBtn);
 
         document.getElementById("question-card").style.display = "block";
         updateTheta(data.theta);
@@ -167,17 +217,26 @@
         document.querySelectorAll(".choice-btn").forEach(btn => {
             btn.disabled = true;
         });
+        const skipEl = document.getElementById("skip-btn");
+        if (skipEl) skipEl.disabled = true;
 
-        const resp = await fetch("/api/answer", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({
-                item_id: state.currentItem.item_id,
-                chosen: chosen,
-                elapsed: (Date.now() - state.startTime) / 1000,
-            }),
-        });
-        const data = await resp.json();
+        let data;
+        try {
+            const resp = await fetch("/api/answer", {
+                method: "POST",
+                headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
+                body: JSON.stringify({
+                    chosen: chosen,
+                    elapsed: (Date.now() - state.startTime) / 1000,
+                }),
+            });
+            data = await resp.json();
+        } catch (e) {
+            console.error("Answer submit failed:", e);
+            state.answered = false;
+            document.querySelectorAll(".choice-btn").forEach(btn => btn.disabled = false);
+            return;
+        }
 
         document.querySelectorAll(".choice-btn").forEach(btn => {
             if (btn.dataset.letter === data.correct_answer) {
@@ -198,6 +257,7 @@
         }
 
         updateTheta(data.theta, data.correct, data.blooms_level);
+        updateSkipUi(data.skip_remaining, state.currentItem.skip_budget);
 
         if (data.done) {
             document.getElementById("next-btn").textContent = "View Results";
@@ -206,6 +266,58 @@
             document.getElementById("next-btn").onclick = loadNextQuestion;
         }
         document.getElementById("next-btn").style.display = "block";
+    }
+
+    async function skipQuestion() {
+        if (state.answered) return;
+        state.answered = true;
+
+        document.querySelectorAll(".choice-btn").forEach(btn => {
+            btn.disabled = true;
+        });
+        const skipBtn = document.getElementById("skip-btn");
+        skipBtn.disabled = true;
+
+        const resp = await fetch("/api/skip", {
+            method: "POST",
+            headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
+            body: JSON.stringify({
+                elapsed: (Date.now() - state.startTime) / 1000,
+            }),
+        });
+        const data = await resp.json();
+
+        if (!resp.ok || data.error) {
+            state.answered = false;
+            document.querySelectorAll(".choice-btn").forEach(btn => {
+                btn.disabled = false;
+            });
+            updateSkipUi(state.currentItem?.skip_remaining, state.currentItem?.skip_budget);
+            const feedback = document.getElementById("feedback");
+            feedback.textContent = data.error || "Unable to skip this question.";
+            feedback.className = "feedback feedback-incorrect";
+            return;
+        }
+
+        if (state.currentItem) {
+            state.currentItem.skip_remaining = data.skip_remaining;
+        }
+        loadNextQuestion();
+    }
+
+    let chartVisible = localStorage.getItem('chartVisible') !== 'false';
+    function toggleChart() {
+        chartVisible = !chartVisible;
+        localStorage.setItem('chartVisible', chartVisible);
+        const canvas = document.getElementById('skill-chart');
+        const btn = document.getElementById('chart-toggle');
+        canvas.style.display = chartVisible ? '' : 'none';
+        btn.textContent = chartVisible ? '\u25BC' : '\u25B6';
+    }
+    // Apply initial state
+    if (!chartVisible) {
+        document.getElementById('skill-chart').style.display = 'none';
+        document.getElementById('chart-toggle').textContent = '\u25B6';
     }
 
     function thetaToSkill(theta) {
@@ -347,9 +459,11 @@
     }
 
     async function finishExam() {
-        if (state.thetaHistory.length === 0) return;
         if (!confirm("Are you sure you want to finish the exam?")) return;
-        await fetch("/api/finish", {method: "POST"});
+        await fetch("/api/finish", {
+            method: "POST",
+            headers: {"X-CSRF-Token": csrfToken},
+        });
         window.location.href = "/exam/{{ exam.id }}/results";
     }
 
@@ -359,12 +473,23 @@
         if (!state.answered && "ABCDE".includes(key)) {
             e.preventDefault();
             submitAnswer(key);
+        } else if (!state.answered && key === "F") {
+            e.preventDefault();
+            skipQuestion();
         } else if (state.answered && (e.key === "Enter" || e.key === " ")) {
             e.preventDefault();
             const nextBtn = document.getElementById("next-btn");
             if (nextBtn.style.display !== "none") {
                 nextBtn.click();
             }
+        } else if (e.key === "ArrowLeft") {
+            e.preventDefault();
+            const viewer = document.getElementById("pdf-viewer");
+            if (viewer) viewer.contentWindow.postMessage({type: "prevPage"}, "*");
+        } else if (e.key === "ArrowRight") {
+            e.preventDefault();
+            const viewer = document.getElementById("pdf-viewer");
+            if (viewer) viewer.contentWindow.postMessage({type: "nextPage"}, "*");
         }
     });
 
@@ -427,6 +552,7 @@
             state.startTime = Date.now() - (lastElapsed * 1000);
             updateTheta(data.theta);
         }
+        updateSkipUi(data.skip_remaining, data.skip_budget);
         loadNextQuestion();
     }
     init();

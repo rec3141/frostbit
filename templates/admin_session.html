@@ -15,15 +15,24 @@
             </div>
         </div>
 
+        <div class="card" style="margin-bottom:1rem">
+            <strong>Resume Token</strong>
+            <div style="margin-top:0.4rem"><code>{{ session.resume_token or '-' }}</code></div>
+        </div>
+
         <!-- Summary stats -->
         <div class="stats-row">
             <div class="stat-card">
                 <div class="stat-number">{{ session.total_questions or '-' }}</div>
-                <div class="stat-desc">Questions</div>
+                <div class="stat-desc">Scored Questions</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number">{{ session.correct or '-' }}</div>
                 <div class="stat-desc">Correct</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ responses | selectattr('skipped') | list | length }}</div>
+                <div class="stat-desc">Skipped</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number">{{ '%.0f%%'|format(session.correct / session.total_questions * 100) if session.total_questions else '-' }}</div>
@@ -65,15 +74,15 @@
                 </thead>
                 <tbody>
                     {% for r in responses %}
-                    <tr class="{{ 'row-correct' if r.correct else 'row-incorrect' }}">
+                    <tr class="{% if r.skipped %}{% else %}{{ 'row-correct' if r.correct else 'row-incorrect' }}{% endif %}">
                         <td>{{ r.index }}</td>
                         <td>{{ r.item_id }}</td>
                         <td class="question-cell" title="{{ r.question }}">{{ r.question[:60] }}{% if r.question|length > 60 %}...{% endif %}</td>
                         <td><span class="tier-tag tier-{{ r.tier }}">{{ r.tier }}</span></td>
                         <td>{{ r.difficulty }}</td>
-                        <td>{{ r.chosen }}</td>
+                        <td>{{ 'Skip' if r.skipped else r.chosen }}</td>
                         <td>{{ r.correct_answer }}</td>
-                        <td>{{ 'O' if r.correct else 'X' }}</td>
+                        <td>{{ 'Skip' if r.skipped else ('O' if r.correct else 'X') }}</td>
                         <td>{{ '%.2f'|format(r.theta_after) if r.theta_after else '-' }}</td>
                         <td>{{ '%dm%02ds'|format(r.elapsed // 60, r.elapsed % 60) if r.elapsed else '-' }}</td>
                     </tr>
@@ -85,7 +94,7 @@
 
     <script>
     // Draw theta trajectory
-    const responses = {{ responses | tojson }};
+    const responses = {{ responses | tojson }}.filter(r => !r.skipped);
     const canvas = document.getElementById('theta-chart');
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;

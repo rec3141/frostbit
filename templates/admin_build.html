@@ -19,6 +19,7 @@
 
         <div class="card">
             <form action="/admin/build" method="POST" enctype="multipart/form-data" class="build-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 {% if error %}
                 <div class="error-msg">{{ error }}</div>
                 {% endif %}
@@ -144,8 +145,15 @@
     function handleFileSelect(input) {
         const file = input.files[0];
         if (!file) return;
-        document.getElementById('file-label').innerHTML =
-            `<span class="file-upload-icon">PDF</span><span>${file.name}</span>`;
+        const fileLabel = document.getElementById('file-label');
+        fileLabel.textContent = '';
+        const icon = document.createElement('span');
+        icon.className = 'file-upload-icon';
+        icon.textContent = 'PDF';
+        const name = document.createElement('span');
+        name.textContent = file.name;
+        fileLabel.appendChild(icon);
+        fileLabel.appendChild(name);
         document.getElementById('pdf-info').style.display = 'flex';
         document.getElementById('pdf-name').textContent = file.name;
         document.getElementById('pdf-size').textContent =

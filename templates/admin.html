@@ -16,8 +16,11 @@
                 <a href="/admin/questions?exam_id={{ exam.id }}" class="nav-link">Questions</a>
                 <a href="/admin/exam/{{ exam.id }}/settings" class="nav-link">Settings</a>
                 <a href="/admin/export?exam_id={{ exam.id }}" class="nav-link">Export CSV</a>
-                <a href="/exam/{{ exam.id }}" class="nav-link" target="_blank">Take Exam</a>
-                <a href="/admin/logout" class="nav-link">Logout</a>
+                <a href="/admin/exam/{{ exam.id }}/take" class="nav-link" target="_blank">Take Exam</a>
+                <form action="/admin/logout" method="POST" style="display:inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="nav-link nav-btn">Logout</button>
+                </form>
             </div>
         </div>
 
@@ -62,11 +65,12 @@
                         <th onclick="sortTable(1)">Student</th>
                         <th onclick="sortTable(1)">ID</th>
                         <th onclick="sortTable(2)">Started</th>
-                        <th onclick="sortTable(3)">Questions</th>
-                        <th onclick="sortTable(4)">Correct</th>
-                        <th onclick="sortTable(5)">Accuracy</th>
-                        <th onclick="sortTable(6)">Theta</th>
-                        <th onclick="sortTable(7)">Status</th>
+                        <th onclick="sortTable(3)">Resume Token</th>
+                        <th onclick="sortTable(4)">Questions</th>
+                        <th onclick="sortTable(5)">Correct</th>
+                        <th onclick="sortTable(6)">Accuracy</th>
+                        <th onclick="sortTable(7)">Theta</th>
+                        <th onclick="sortTable(8)">Status</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -77,6 +81,7 @@
                         <td><a href="/admin/session/{{ s.id }}">{{ s.student_name }}</a></td>
                         <td>{{ s.student_id }}</td>
                         <td>{{ s.started_at[:16] if s.started_at else '-' }}</td>
+                        <td><code>{{ s.resume_token or '-' }}</code></td>
                         <td>{{ s.total_questions or '-' }}</td>
                         <td>{{ s.correct or '-' }}</td>
                         <td>{{ '%.0f%%'|format(s.correct / s.total_questions * 100) if s.total_questions else '-' }}</td>
@@ -87,10 +92,12 @@
                         <td>
                             {% if s.archived %}
                             <form action="/admin/session/{{ s.id }}/unarchive" method="POST" style="display:inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn-icon" title="Unarchive">restore</button>
                             </form>
                             {% else %}
                             <form action="/admin/session/{{ s.id }}/archive" method="POST" style="display:inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn-icon" title="Archive">archive</button>
                             </form>
                             {% endif %}
@@ -230,12 +237,20 @@
 
         // Legend
         const legend = document.getElementById('compare-legend');
-        legend.innerHTML = '';
+        legend.textContent = '';
         trajectories.forEach((t, ti) => {
             const color = COLORS[ti % COLORS.length];
             const finalTheta = t.points.length ? t.points[t.points.length - 1].theta : null;
             const label = `${t.name} (${t.points.length}Q, θ=${finalTheta !== null ? finalTheta.toFixed(2) : '?'})`;
-            legend.innerHTML += `<span class="legend-item"><span class="legend-dot" style="background:${color}"></span>${label}</span>`;
+            const item = document.createElement('span');
+            item.className = 'legend-item';
+
+            const dot = document.createElement('span');
+            dot.className = 'legend-dot';
+            dot.style.background = color;
+            item.appendChild(dot);
+            item.appendChild(document.createTextNode(label));
+            legend.appendChild(item);
         });
     }
 

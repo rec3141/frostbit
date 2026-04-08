@@ -11,6 +11,9 @@
         <div class="card results-card">
             <h1>Exam Complete</h1>
             <p class="student-name-result">{{ student_name }}</p>
+            <p class="subtitle" style="margin-top:-0.5rem">
+                Resume token: <code>{{ resume_token }}</code>
+            </p>
 
             <div class="results-grid" id="results-grid">
                 <div class="result-stat">
@@ -56,14 +59,28 @@
         const tierDiv = document.getElementById("tier-breakdown");
         for (const [tier, stats] of Object.entries(data.tier_breakdown)) {
             const pct = stats.total > 0 ? Math.round(100 * stats.correct / stats.total) : 0;
-            tierDiv.innerHTML += `
-                <div class="tier-row">
-                    <span class="tier-name">${tier}</span>
-                    <div class="tier-bar-bg">
-                        <div class="tier-bar" style="width:${pct}%"></div>
-                    </div>
-                    <span class="tier-pct">${stats.correct}/${stats.total} (${pct}%)</span>
-                </div>`;
+            const row = document.createElement("div");
+            row.className = "tier-row";
+
+            const name = document.createElement("span");
+            name.className = "tier-name";
+            name.textContent = tier;
+
+            const barBg = document.createElement("div");
+            barBg.className = "tier-bar-bg";
+            const bar = document.createElement("div");
+            bar.className = "tier-bar";
+            bar.style.width = `${pct}%`;
+            barBg.appendChild(bar);
+
+            const stat = document.createElement("span");
+            stat.className = "tier-pct";
+            stat.textContent = `${stats.correct}/${stats.total} (${pct}%)`;
+
+            row.appendChild(name);
+            row.appendChild(barBg);
+            row.appendChild(stat);
+            tierDiv.appendChild(row);
         }
 
         // Theta trajectory chart (simple canvas)

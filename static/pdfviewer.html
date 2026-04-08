@@ -96,7 +96,7 @@ async function renderPage(num) {
     document.getElementById('next-btn').disabled = (num >= pdf.numPages);
 
     // Ack to parent
-    window.parent.postMessage({type: "pageRendered", page: num}, "*");
+    window.parent.postMessage({type: "pageRendered", page: num}, window.location.origin);
 }
 
 window.go = function(delta) { renderPage(currentPage + delta); };
@@ -127,12 +127,17 @@ let queuedPage = null;
 let pendingUrl = null;
 
 window.addEventListener('message', (e) => {
+    if (e.origin !== window.location.origin) return;
     if (e.data && e.data.type === 'goToPage') {
         if (pdf) {
             renderPage(e.data.page);
         } else {
             queuedPage = e.data.page;
         }
+    } else if (e.data && e.data.type === 'prevPage') {
+        if (pdf) go(-1);
+    } else if (e.data && e.data.type === 'nextPage') {
+        if (pdf) go(1);
     } else if (e.data && e.data.type === 'loadPdf') {
         // Parent tells us which PDF to load
         if (!pdf) {
@@ -148,7 +153,7 @@ setTimeout(() => {
             renderPage(queuedPage);
             queuedPage = null;
         }
-        window.parent.postMessage({type: "pdfReady"}, "*");
+        window.parent.postMessage({type: "pdfReady"}, window.location.origin);
     });
 }, 200);
 </script>

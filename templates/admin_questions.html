@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Question Analytics — ENVR3140</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -16,7 +17,11 @@
                 <a href="/admin/questions?exam_id={{ exam.id }}" class="nav-link active">Questions</a>
                 <a href="/admin/exam/{{ exam.id }}/settings" class="nav-link">Settings</a>
                 <a href="/admin/export?exam_id={{ exam.id }}" class="nav-link">Export CSV</a>
-                <a href="/admin/logout" class="nav-link">Logout</a>
+                <a href="/exam/{{ exam.id }}" class="nav-link" target="_blank">Take Exam</a>
+                <form action="/admin/logout" method="POST" style="display:inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="nav-link nav-btn">Logout</button>
+                </form>
             </div>
         </div>
 
@@ -83,6 +88,14 @@
                 </label>
                 <span id="filter-count" class="filter-count"></span>
             </div>
+            <div class="filter-row" style="margin-top:0.75rem">
+                <label>Activate random subset:
+                    <input type="range" id="subset-slider" min="0" max="{{ questions|length }}" value="{{ questions|length }}" step="5"
+                           oninput="updateSubsetLabel(this.value)" style="width:200px;vertical-align:middle">
+                    <span id="subset-label">{{ questions|length }}</span> / {{ questions|length }}
+                </label>
+                <button class="btn btn-secondary btn-sm" onclick="applySubset()">Apply</button>
+            </div>
         </div>
 
         <!-- Question table -->
@@ -106,7 +119,7 @@
                 </thead>
                 <tbody>
                     {% for q in questions %}
-                    <tr data-tier="{{ q.difficulty }}" data-blooms="{{ q.blooms_level or '' }}" data-flagged="{{ 'yes' if q.ensemble_flag_count else 'no' }}" class="q-row" onclick="toggleQuestion({{ q.id }})">
+                    <tr data-qid="{{ q.id }}" data-tier="{{ q.difficulty }}" data-blooms="{{ q.blooms_level or '' }}" data-flagged="{{ 'yes' if q.ensemble_flag_count else 'no' }}" class="q-row" onclick="toggleQuestion({{ q.id }})">
                         <td>{{ q.id }}</td>
                         <td class="question-cell" title="{{ q.question }}">{{ q.question_short[:50] }}{% if q.question_short|length > 50 %}...{% endif %}</td>
                         <td><span class="tier-tag tier-{{ q.difficulty }}">{{ q.difficulty }}</span></td>
@@ -138,10 +151,20 @@
     </div>
 
     <script>
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
     const allQuestions = {{ questions | tojson }};
     const questionsById = {};
     allQuestions.forEach(q => questionsById[q.id] = q);
     let openEditorRow = null;
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
 
     function toggleQuestion(id) {
         // Close any open editor
@@ -159,7 +182,7 @@
         if (!q) return;
 
         // Find the clicked row
-        const clickedRow = document.querySelector(`.q-row[onclick="toggleQuestion(${id})"]`);
+        const clickedRow = document.querySelector(`.q-row[data-qid="${id}"]`);
         if (!clickedRow) return;
 
         // Create editor row
@@ -174,20 +197,20 @@
                 <div class="q-editor-header">
                     <strong>Question ${id}</strong>
                     <div>
-                        <span class="q-editor-meta">Answer: <strong>${q.answer || '?'}</strong></span>
-                        <span class="q-editor-meta">Tier: <strong>${q.difficulty || '?'}</strong></span>
-                        <span class="q-editor-meta">Bloom's: <strong>${q.blooms_name || '?'}</strong></span>
+                        <span class="q-editor-meta">Answer: <strong>${escapeHtml(q.answer || '?')}</strong></span>
+                        <span class="q-editor-meta">Tier: <strong>${escapeHtml(q.difficulty || '?')}</strong></span>
+                        <span class="q-editor-meta">Bloom's: <strong>${escapeHtml(q.blooms_name || '?')}</strong></span>
                     </div>
                 </div>
                 <div class="form-group">
-                    <textarea id="qd-question-${id}" rows="2">${q.question || ''}</textarea>
+                    <textarea id="qd-question-${id}" rows="2">${escapeHtml(q.question || '')}</textarea>
                 </div>
                 <div class="q-choices-grid">
-                    <div class="form-group"><label>A</label><input id="qd-A-${id}" type="text" value="${(q.A||'').replace(/"/g,'&quot;')}"></div>
-                    <div class="form-group"><label>B</label><input id="qd-B-${id}" type="text" value="${(q.B||'').replace(/"/g,'&quot;')}"></div>
-                    <div class="form-group"><label>C</label><input id="qd-C-${id}" type="text" value="${(q.C||'').replace(/"/g,'&quot;')}"></div>
-                    <div class="form-group"><label>D</label><input id="qd-D-${id}" type="text" value="${(q.D||'').replace(/"/g,'&quot;')}"></div>
-                    <div class="form-group"><label>E</label><input id="qd-E-${id}" type="text" value="${(q.E||'').replace(/"/g,'&quot;')}"></div>
+                    <div class="form-group"><label>A</label><input id="qd-A-${id}" type="text" value="${escapeHtml(q.A || '')}"></div>
+                    <div class="form-group"><label>B</label><input id="qd-B-${id}" type="text" value="${escapeHtml(q.B || '')}"></div>
+                    <div class="form-group"><label>C</label><input id="qd-C-${id}" type="text" value="${escapeHtml(q.C || '')}"></div>
+                    <div class="form-group"><label>D</label><input id="qd-D-${id}" type="text" value="${escapeHtml(q.D || '')}"></div>
+                    <div class="form-group"><label>E</label><input id="qd-E-${id}" type="text" value="${escapeHtml(q.E || '')}"></div>
                 </div>
                 <div>
                     <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); saveQuestion(${id})">Save</button>
@@ -226,7 +249,7 @@
         };
         const resp = await fetch('/admin/api/question/edit', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
             body: JSON.stringify(data),
         });
         const result = await resp.json();
@@ -252,10 +275,68 @@
         }
     }
 
+    function updateSubsetLabel(val) {
+        document.getElementById('subset-label').textContent = val;
+    }
+
+    async function applySubset() {
+        const count = parseInt(document.getElementById('subset-slider').value);
+        const total = allQuestions.length;
+
+        // Shuffle a copy of all question IDs
+        const ids = allQuestions.map(q => q.id);
+        for (let i = ids.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [ids[i], ids[j]] = [ids[j], ids[i]];
+        }
+
+        // First `count` get enabled, rest get disabled
+        const enableIds = new Set(ids.slice(0, count));
+        const disableIds = ids.slice(count);
+
+        // Batch update
+        const status = document.getElementById('filter-count');
+        status.textContent = 'Applying...';
+
+        // Send all toggles
+        const promises = [];
+        for (const id of enableIds) {
+            if (!questionsById[id].enabled) {
+                promises.push(fetch('/admin/api/question/toggle', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({exam_id: '{{ exam.id }}', id: id, enabled: true}),
+                }));
+                questionsById[id].enabled = true;
+            }
+        }
+        for (const id of disableIds) {
+            if (questionsById[id].enabled !== false) {
+                promises.push(fetch('/admin/api/question/toggle', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({exam_id: '{{ exam.id }}', id: id, enabled: false}),
+                }));
+                questionsById[id].enabled = false;
+            }
+        }
+        await Promise.all(promises);
+
+        // Update toggles in the table
+        document.querySelectorAll('.q-row').forEach(row => {
+            const id = parseInt(row.cells[0].textContent.trim());
+            const toggle = row.querySelector('.toggle-sm input');
+            if (toggle) toggle.checked = enableIds.has(id);
+        });
+
+        status.textContent = `${count} active, ${total - count} disabled`;
+        updateStats();
+    }
+
     async function toggleEnabled(id, enabled) {
         await fetch('/admin/api/question/toggle', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
             body: JSON.stringify({exam_id: '{{ exam.id }}', id: id, enabled: enabled}),
         });
         if (questionsById[id]) questionsById[id].enabled = enabled;
@@ -265,7 +346,7 @@
         if (!confirm(`Delete question ${id}? This cannot be undone.`)) return;
         const resp = await fetch('/admin/api/question/delete', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
             body: JSON.stringify({exam_id: '{{ exam.id }}', id: id}),
         });
         const result = await resp.json();
@@ -335,7 +416,8 @@
             row.style.display = show ? '' : 'none';
             if (show) shown++;
         });
-        document.getElementById('filter-count').textContent = `${shown} questions`;
+        const active = allQuestions.filter(q => q.enabled !== false).length;
+        document.getElementById('filter-count').textContent = `${active}/${allQuestions.length} questions active (${shown} shown)`;
     }
 
     let qSortDir = 1, qLastCol = -1;

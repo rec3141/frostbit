@@ -42,10 +42,11 @@ python3 -m pipeline.build_exam exams/my-exam/ --pdf /path/to/textbook.pdf
 
 1. Select an exam from the front page
 2. Enter name and student ID
-3. Answer questions — the system adapts difficulty to your level
-4. Reference PDF is shown alongside questions (open book)
-5. Challenge level chart updates in real time
-6. Click "Finished" when done, or come back later with "Continue"
+3. Save the resume token shown in the exam UI if you may need to come back
+4. Answer questions — the system adapts difficulty to your level
+5. Reference PDF is shown alongside questions (open book)
+6. Challenge level chart updates in real time
+7. Click "Finished" when done, or use your resume token to continue later
 
 ### For Instructors
 

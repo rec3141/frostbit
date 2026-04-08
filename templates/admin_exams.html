@@ -12,7 +12,10 @@
             <h1>Frostbit Admin</h1>
             <div class="admin-nav">
                 <a href="/admin/build" class="nav-link">Build New Exam</a>
-                <a href="/admin/logout" class="nav-link">Logout</a>
+                <form action="/admin/logout" method="POST" style="display:inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="nav-link nav-btn">Logout</button>
+                </form>
             </div>
         </div>
 

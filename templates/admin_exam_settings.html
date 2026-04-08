@@ -6,93 +6,708 @@
     <title>Settings — {{ exam.title }}</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="/static/theme.js"></script>
+    <style>
+    .settings-review {
+        display: grid;
+        gap: 1.5rem;
+    }
+
+    .settings-pdf-card {
+        padding: 0;
+        overflow: hidden;
+    }
+
+    .settings-pdf-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .settings-pdf-frame {
+        width: 100%;
+        height: min(75vh, 900px);
+        border: 0;
+        background: #525659;
+    }
+
+    .cat-demo {
+        margin-top: 1rem;
+        padding: 1rem;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--bg-card) 88%, var(--accent) 12%);
+    }
+
+    .cat-demo-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 1rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .cat-demo-note {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+
+    .cat-demo-canvas {
+        width: 100%;
+        height: 220px;
+        display: block;
+        margin: 0.75rem 0 1rem;
+    }
+
+    .cat-demo-table-wrap {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--bg-card);
+    }
+
+    .cat-demo-table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+    }
+
+    .cat-demo-table th,
+    .cat-demo-table td {
+        padding: 0.7rem 0.85rem;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+    }
+
+    .cat-demo-table thead th {
+        font-size: 0.78rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        background: color-mix(in srgb, var(--bg-card) 78%, var(--accent) 22%);
+        white-space: normal;
+    }
+
+    .cat-demo-table tbody th {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        font-weight: 600;
+        background: color-mix(in srgb, var(--bg-card) 92%, black 8%);
+        white-space: normal;
+    }
+
+    .cat-demo-metric {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+
+    .cat-demo-metric-label {
+        text-decoration: underline dotted;
+        text-underline-offset: 0.18rem;
+    }
+
+    .cat-demo-metric-help {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1rem;
+        height: 1rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--bg-card) 82%, var(--accent) 18%);
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        font-weight: 700;
+        line-height: 1;
+        cursor: help;
+        outline: none;
+    }
+
+    .cat-demo-metric-help::after {
+        content: attr(data-tip);
+        position: absolute;
+        left: calc(100% + 0.55rem);
+        top: 50%;
+        transform: translateY(-50%);
+        width: 220px;
+        padding: 0.55rem 0.65rem;
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--bg-card) 16%, black 84%);
+        color: #f8fafc;
+        font-size: 0.75rem;
+        line-height: 1.35;
+        text-transform: none;
+        letter-spacing: normal;
+        white-space: normal;
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.25);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 120ms ease;
+        z-index: 20;
+    }
+
+    .cat-demo-metric-help:hover::after,
+    .cat-demo-metric-help:focus-visible::after {
+        opacity: 1;
+    }
+
+    @media (max-width: 800px) {
+        .cat-demo-metric-help::after {
+            left: auto;
+            right: 0;
+            top: calc(100% + 0.45rem);
+            transform: none;
+            width: min(220px, 70vw);
+        }
+    }
+
+    .cat-demo-table tbody tr:last-child th,
+    .cat-demo-table tbody tr:last-child td {
+        border-bottom: 0;
+    }
+
+    .cat-demo-table td code,
+    .cat-demo-table tbody th code {
+        font-size: 0.85rem;
+    }
+
+    .cat-demo-user-label {
+        display: inline-flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        font-weight: 700;
+        color: var(--text);
+        line-height: 1.2;
+    }
+
+    .cat-demo-user-dot {
+        width: 0.65rem;
+        height: 0.65rem;
+        border-radius: 999px;
+        flex: 0 0 auto;
+    }
+
+    @media (max-width: 800px) {
+        .cat-demo-table th,
+        .cat-demo-table td {
+            padding: 0.6rem 0.7rem;
+        }
+    }
+
+    @media (min-width: 1200px) {
+        .settings-review {
+            grid-template-columns: minmax(0, 1fr) minmax(420px, 48%);
+            align-items: start;
+        }
+
+        .settings-pdf-card {
+            position: sticky;
+            top: 1.5rem;
+        }
+    }
+    </style>
 </head>
 <body>
     <div class="admin-container">
         <div class="admin-header">
             <h1>Exam Settings</h1>
             <div class="admin-nav">
+                <button type="submit" form="settings-form" class="nav-link" style="background:var(--accent);color:#fff;border:none;cursor:pointer">Save Settings</button>
                 <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()"></button>
                 <a href="/admin?exam_id={{ exam.id }}" class="nav-link">Dashboard</a>
             </div>
         </div>
 
-        <div class="card">
-            {% if saved %}
-            <div class="success-msg">Settings saved.</div>
+        <div class="settings-review">
+            <div class="card">
+                {% if saved %}
+                <div class="success-msg">Settings saved.</div>
+                {% endif %}
+
+                <form id="settings-form" action="/admin/exam/{{ exam.id }}/settings" method="POST" class="build-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <h3 style="margin-bottom:1rem">Display</h3>
+                    <div class="form-row-2col">
+                        <div class="form-group">
+                            <label for="title">Title</label>
+                            <input type="text" id="title" name="title" value="{{ exam.title }}">
+                        </div>
+                        <div class="form-group">
+                            <label for="subtitle">Subtitle</label>
+                            <input type="text" id="subtitle" name="subtitle" value="{{ exam.subtitle }}">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="description">Description</label>
+                        <textarea id="description" name="description" rows="2">{{ exam.description }}</textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="toggle">
+                            <input type="checkbox" name="published" {{ 'checked' if exam.published }}>
+                            <span class="toggle-track"><span class="toggle-knob"></span></span>
+                            Published (visible to students)
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="toggle">
+                            <input type="checkbox" name="show_reference" {{ 'checked' if exam.config.get('show_reference', true) }}>
+                            <span class="toggle-track"><span class="toggle-knob"></span></span>
+                            Show reference material (open book)
+                        </label>
+                    </div>
+
+                    <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
+                    <h3 style="margin-bottom:1rem">PDF</h3>
+                    <div class="form-row-2col">
+                        <div class="form-group">
+                            <label for="pdf_offset">Page Offset</label>
+                            <input type="number" id="pdf_offset" name="pdf_offset"
+                                   value="{{ exam.pdf_offset }}" min="-20" max="20">
+                            <small class="form-hint">PDF page = printed page + offset.
+                                {% if exam.config.get('pdf_page_offset_auto') %}
+                                Auto-detected: {{ exam.config.pdf_page_offset_auto }}
+                                {% endif %}
+                            </small>
+                        </div>
+                        <div class="form-group">
+                            <label>Total Pages</label>
+                            <input type="text" value="{{ exam.config.get('total_pages', '?') }}" disabled>
+                        </div>
+                    </div>
+
+                    <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
+                    <h3 style="margin-bottom:1rem">CAT Engine</h3>
+                    <div class="form-row-2col">
+                        <div class="form-group">
+                            <label for="initial_theta">Starting Theta</label>
+                            <input type="number" id="initial_theta" name="initial_theta" step="0.1"
+                                   value="{{ exam.cat_config.get('initial_theta', -2.0) }}">
+                            <small class="form-hint">Lower = start with easier questions</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="half_life">Recency Half-Life</label>
+                            <input type="number" id="half_life" name="half_life" step="1" min="1"
+                                   value="{{ exam.cat_config.get('recency_half_life', 8) }}">
+                            <small class="form-hint">Questions until weight halves (lower = more reactive)</small>
+                        </div>
+                    </div>
+                    <div class="form-row-2col">
+                        <div class="form-group">
+                            <label for="skip_budget">Skip Budget</label>
+                            <input type="number" id="skip_budget" name="skip_budget" step="1" min="0"
+                                   value="{{ exam.cat_config.get('skip_budget', 0) }}">
+                            <small class="form-hint">Penalty-free skips available to each student attempt</small>
+                        </div>
+                    </div>
+
+                        <div class="cat-demo">
+                            <div class="cat-demo-head">
+                                <strong>Live CAT Preview</strong>
+                                <span class="cat-demo-note">Changing values resets from Q1.</span>
+                            </div>
+                        <div class="cat-demo-note">Simulated lower, mid, and high ability students using this exam’s item difficulty distribution. Solid lines show score theta; dashed lines show routing theta.</div>
+                        <canvas id="cat-demo-canvas" class="cat-demo-canvas" width="640" height="220"></canvas>
+                        <div class="cat-demo-table-wrap" id="cat-demo-grid"></div>
+                    </div>
+
+                </form>
+            </div>
+
+            {% if exam.has_pdf() %}
+            <div class="card settings-pdf-card">
+                <div class="settings-pdf-header">
+                    <div>
+                        <strong>Reference PDF</strong>
+                        <div style="font-size:0.85rem;color:var(--text-muted)">Review source material while editing settings.</div>
+                    </div>
+                </div>
+                <iframe id="settings-pdf-viewer" class="settings-pdf-frame" src="/static/pdfviewer.html"></iframe>
+            </div>
             {% endif %}
-
-            <form action="/admin/exam/{{ exam.id }}/settings" method="POST" class="build-form">
-                <h3 style="margin-bottom:1rem">Display</h3>
-                <div class="form-row-2col">
-                    <div class="form-group">
-                        <label for="title">Title</label>
-                        <input type="text" id="title" name="title" value="{{ exam.title }}">
-                    </div>
-                    <div class="form-group">
-                        <label for="subtitle">Subtitle</label>
-                        <input type="text" id="subtitle" name="subtitle" value="{{ exam.subtitle }}">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="description">Description</label>
-                    <textarea id="description" name="description" rows="2">{{ exam.description }}</textarea>
-                </div>
-
-                <div class="form-group">
-                    <label class="toggle">
-                        <input type="checkbox" name="published" {{ 'checked' if exam.published }}>
-                        <span class="toggle-track"><span class="toggle-knob"></span></span>
-                        Published (visible to students)
-                    </label>
-                </div>
-                <div class="form-group">
-                    <label class="toggle">
-                        <input type="checkbox" name="show_reference" {{ 'checked' if exam.config.get('show_reference', true) }}>
-                        <span class="toggle-track"><span class="toggle-knob"></span></span>
-                        Show reference material (open book)
-                    </label>
-                </div>
-
-                <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
-                <h3 style="margin-bottom:1rem">PDF</h3>
-                <div class="form-row-2col">
-                    <div class="form-group">
-                        <label for="pdf_offset">Page Offset</label>
-                        <input type="number" id="pdf_offset" name="pdf_offset"
-                               value="{{ exam.pdf_offset }}" min="-20" max="20">
-                        <small class="form-hint">PDF page = printed page + offset.
-                            {% if exam.config.get('pdf_page_offset_auto') %}
-                            Auto-detected: {{ exam.config.pdf_page_offset_auto }}
-                            {% endif %}
-                        </small>
-                    </div>
-                    <div class="form-group">
-                        <label>Total Pages</label>
-                        <input type="text" value="{{ exam.config.get('total_pages', '?') }}" disabled>
-                    </div>
-                </div>
-
-                <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
-                <h3 style="margin-bottom:1rem">CAT Engine</h3>
-                <div class="form-row-2col">
-                    <div class="form-group">
-                        <label for="initial_theta">Starting Theta</label>
-                        <input type="number" id="initial_theta" name="initial_theta" step="0.1"
-                               value="{{ exam.cat_config.get('initial_theta', -2.0) }}">
-                        <small class="form-hint">Lower = start with easier questions</small>
-                    </div>
-                    <div class="form-group">
-                        <label for="half_life">Recency Half-Life</label>
-                        <input type="number" id="half_life" name="half_life" step="1" min="1"
-                               value="{{ exam.cat_config.get('recency_half_life', 8) }}">
-                        <small class="form-hint">Questions until weight halves (lower = more reactive)</small>
-                    </div>
-                </div>
-
-                <button type="submit" class="btn btn-primary" style="margin-top:1rem">Save Settings</button>
-            </form>
         </div>
     </div>
+    <script>
+    const demoItemDifficulties = {{ demo_item_difficulties | tojson }};
+    const pdfViewer = document.getElementById("settings-pdf-viewer");
+    const appOrigin = window.location.origin;
+    const initialThetaInput = document.getElementById("initial_theta");
+    const halfLifeInput = document.getElementById("half_life");
+    const demoCanvas = document.getElementById("cat-demo-canvas");
+    const demoGrid = document.getElementById("cat-demo-grid");
+
+    if (pdfViewer) {
+        pdfViewer.addEventListener("load", () => {
+            pdfViewer.contentWindow.postMessage({type: "loadPdf", url: "/exam/{{ exam.id }}/pdf"}, appOrigin);
+        });
+    }
+
+    const DEMO_USERS = [
+        {id: "lower", label: "Lower Ability", trueTheta: -1.5, color: "#dc2626", seed: 11},
+        {id: "mid", label: "Mid Ability", trueTheta: 0.0, color: "#2563eb", seed: 23},
+        {id: "high", label: "High Ability", trueTheta: 1.5, color: "#16a34a", seed: 37},
+    ];
+    const MAX_DEMO_QUESTIONS = 100;
+    const PRIOR_VAR = 2.0;
+    const THETA_GRID = Array.from({length: 161}, (_, i) => -4 + (i * 0.05));
+    const THETA_PLOT_MIN = -3;
+    const THETA_PLOT_MAX = 3;
+    let demoState = null;
+    let demoTimer = null;
+
+    function icc(theta, difficulty) {
+        const logit = Math.max(-10, Math.min(10, theta - difficulty));
+        return 1 / (1 + Math.exp(-logit));
+    }
+
+    function itemInformation(theta, difficulty) {
+        const p = icc(theta, difficulty);
+        return p * (1 - p);
+    }
+
+    function estimatePosteriorTheta(responses, priorMean) {
+        if (!responses.length) {
+            return {theta: priorMean, se: Math.sqrt(PRIOR_VAR)};
+        }
+
+        const logProbs = THETA_GRID.map((theta) => {
+            let logProb = -0.5 * (((theta - priorMean) ** 2) / PRIOR_VAR);
+            responses.forEach(([difficulty, correct]) => {
+                const p = Math.max(1e-9, Math.min(1 - 1e-9, icc(theta, difficulty)));
+                logProb += Math.log(correct ? p : (1 - p));
+            });
+            return logProb;
+        });
+
+        const maxLogProb = Math.max(...logProbs);
+        const probs = logProbs.map((logProb) => Math.exp(logProb - maxLogProb));
+        const totalProb = probs.reduce((sum, prob) => sum + prob, 0);
+        if (!totalProb) {
+            return {theta: priorMean, se: Math.sqrt(PRIOR_VAR)};
+        }
+
+        const theta = THETA_GRID.reduce((sum, gridTheta, idx) => sum + (gridTheta * probs[idx]), 0) / totalProb;
+        const variance = THETA_GRID.reduce(
+            (sum, gridTheta, idx) => sum + (((gridTheta - theta) ** 2) * probs[idx]),
+            0,
+        ) / totalProb;
+        return {theta, se: Math.sqrt(Math.max(variance, 1e-10))};
+    }
+
+    function estimateRoutingTheta(responses, priorMean, recencyHalfLife) {
+        if (!responses.length) {
+            return {theta: priorMean, se: Math.sqrt(PRIOR_VAR)};
+        }
+
+        const halfLife = Math.max(1, Number(recencyHalfLife) || 8);
+        const decay = Math.pow(0.5, 1 / halfLife);
+        const weights = responses.map((_, i) => Math.pow(decay, responses.length - 1 - i));
+        let weightedCorrect = 0;
+        let weightedTotal = 0;
+        responses.forEach(([_, correct], i) => {
+            weightedTotal += weights[i];
+            if (correct) weightedCorrect += weights[i];
+        });
+
+        let prop = weightedCorrect / weightedTotal;
+        prop = Math.max(0.05, Math.min(0.95, prop));
+        let theta = Math.log(prop / (1 - prop));
+
+        for (let i = 0; i < 50; i++) {
+            let grad = 0;
+            let hessian = 0;
+            responses.forEach(([difficulty, correct], idx) => {
+                const p = icc(theta, difficulty);
+                grad += weights[idx] * ((correct ? 1 : 0) - p);
+                hessian -= weights[idx] * p * (1 - p);
+            });
+
+            grad -= (theta - priorMean) / PRIOR_VAR;
+            hessian -= 1 / PRIOR_VAR;
+            if (Math.abs(hessian) < 1e-10) break;
+
+            let step = grad / hessian;
+            step = Math.max(-0.5, Math.min(0.5, step));
+            theta -= step;
+            if (Math.abs(step) < 1e-6) break;
+        }
+
+        theta = Math.max(-3, Math.min(3, theta));
+        let totalInfo = 1 / PRIOR_VAR;
+        responses.forEach(([difficulty], idx) => {
+            totalInfo += weights[idx] * itemInformation(theta, difficulty);
+        });
+        return {theta, se: 1 / Math.sqrt(Math.max(totalInfo, 1e-10))};
+    }
+
+    function createRng(seed) {
+        let state = seed >>> 0;
+        return () => {
+            state = (state * 1664525 + 1013904223) >>> 0;
+            return state / 4294967296;
+        };
+    }
+
+    function getDemoBank() {
+        if (demoItemDifficulties.length) return demoItemDifficulties;
+        return Array.from({length: 41}, (_, i) => -3 + i * 0.15);
+    }
+
+    function makeUserState(config, priorMean) {
+        return {
+            ...config,
+            posteriorTheta: priorMean,
+            posteriorSe: Math.sqrt(PRIOR_VAR),
+            routingTheta: priorMean,
+            routingSe: Math.sqrt(PRIOR_VAR),
+            responses: [],
+            history: [],
+            used: new Set(),
+            rng: createRng(config.seed),
+        };
+    }
+
+    function resetDemo() {
+        const priorMean = Number(initialThetaInput.value || -2);
+        demoState = {
+            priorMean,
+            recencyHalfLife: Number(halfLifeInput.value || 8),
+            bank: getDemoBank(),
+            users: DEMO_USERS.map((user) => makeUserState(user, priorMean)),
+        };
+        drawDemo();
+        renderDemoStats();
+    }
+
+    function ensureDemoTimer() {
+        if (!demoTimer) {
+            demoTimer = window.setInterval(stepDemo, 500);
+        }
+    }
+
+    function selectNextDifficulty(user, bank) {
+        const available = bank
+            .map((difficulty, idx) => ({difficulty, idx}))
+            .filter((entry) => !user.used.has(entry.idx));
+        if (!available.length) return null;
+        available.sort((a, b) => Math.abs(a.difficulty - user.routingTheta) - Math.abs(b.difficulty - user.routingTheta));
+        const top = available.slice(0, Math.min(5, available.length));
+        const choice = top[Math.floor(user.rng() * top.length)];
+        user.used.add(choice.idx);
+        return choice.difficulty;
+    }
+
+    function stepDemo() {
+        if (!demoState) return;
+        const {priorMean, recencyHalfLife, bank, users} = demoState;
+        if (users.every((user) => user.history.length >= MAX_DEMO_QUESTIONS)) {
+            if (demoTimer) {
+                window.clearInterval(demoTimer);
+                demoTimer = null;
+            }
+            return;
+        }
+
+        users.forEach((user) => {
+            if (user.history.length >= MAX_DEMO_QUESTIONS) return;
+            const difficulty = selectNextDifficulty(user, bank);
+            if (difficulty === null) return;
+            const correct = user.rng() < icc(user.trueTheta, difficulty);
+            user.responses.push([difficulty, correct]);
+            const posteriorEstimate = estimatePosteriorTheta(user.responses, priorMean);
+            const routingEstimate = estimateRoutingTheta(user.responses, priorMean, recencyHalfLife);
+            user.posteriorTheta = posteriorEstimate.theta;
+            user.posteriorSe = posteriorEstimate.se;
+            user.routingTheta = routingEstimate.theta;
+            user.routingSe = routingEstimate.se;
+            user.history.push({
+                q: user.history.length + 1,
+                posteriorTheta: posteriorEstimate.theta,
+                posteriorSe: posteriorEstimate.se,
+                routingTheta: routingEstimate.theta,
+                routingSe: routingEstimate.se,
+                correct,
+                difficulty,
+            });
+        });
+
+        drawDemo();
+        renderDemoStats();
+    }
+
+    function renderDemoStats() {
+        if (!demoState || !demoGrid) return;
+        demoGrid.textContent = "";
+        const table = document.createElement("table");
+        table.className = "cat-demo-table";
+
+        const metrics = [
+            {
+                label: "True Theta",
+                help: "The simulated student's actual latent ability used to generate answers.",
+                value: (user) => user.trueTheta.toFixed(1),
+            },
+            {
+                label: "Score Theta",
+                help: "The full Bayesian posterior estimate used for scoring and final reporting.",
+                value: (user) => user.posteriorTheta.toFixed(2),
+            },
+            {
+                label: "Score SE",
+                help: "Posterior standard error. Lower values mean the score estimate is more certain.",
+                value: (user) => user.posteriorSe.toFixed(2),
+            },
+            {
+                label: "Questions",
+                help: "How many questions this simulated student has answered so far.",
+                value: (user) => String(user.history.length),
+            },
+            {
+                label: "Accuracy",
+                help: "Percent of answered questions answered correctly in the simulation.",
+                value: (user) => {
+                    const answered = user.history.length;
+                    if (!answered) return "0%";
+                    const correctCount = user.history.filter((item) => item.correct).length;
+                    return `${Math.round((correctCount / answered) * 100)}%`;
+                },
+            },
+            {
+                label: "Last Diff",
+                help: "Difficulty of the most recently selected question.",
+                value: (user) => {
+                    const last = user.history[user.history.length - 1];
+                    return last ? last.difficulty.toFixed(2) : "--";
+                },
+            },
+            {
+                label: "Routing Theta",
+                help: "The recency-weighted estimate used only to choose the next question difficulty.",
+                value: (user) => user.routingTheta.toFixed(2),
+            },
+        ];
+
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th scope="col">Metric</th>
+                    ${demoState.users.map((user) => `
+                        <th scope="col">
+                            <span class="cat-demo-user-label">
+                                <span class="cat-demo-user-dot" style="background:${user.color}"></span>
+                                ${user.label}
+                            </span>
+                        </th>
+                    `).join("")}
+                </tr>
+            </thead>
+            <tbody>
+                ${metrics.map((metric) => `
+                    <tr>
+                        <th scope="row">
+                            <span class="cat-demo-metric">
+                                <code class="cat-demo-metric-label">${metric.label}</code>
+                                <span class="cat-demo-metric-help" tabindex="0" aria-label="${metric.help}" data-tip="${metric.help}">?</span>
+                            </span>
+                        </th>
+                        ${demoState.users.map((user) => `<td><code>${metric.value(user)}</code></td>`).join("")}
+                    </tr>
+                `).join("")}
+            </tbody>
+        `;
+        demoGrid.appendChild(table);
+    }
+
+    function drawDemo() {
+        if (!demoState || !demoCanvas) return;
+        const ctx = demoCanvas.getContext("2d");
+        const rect = demoCanvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        demoCanvas.width = rect.width * dpr;
+        demoCanvas.height = rect.height * dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        const W = rect.width;
+        const H = rect.height;
+        ctx.clearRect(0, 0, W, H);
+
+        const pad = {top: 12, right: 16, bottom: 26, left: 34};
+        const plotW = W - pad.left - pad.right;
+        const plotH = H - pad.top - pad.bottom;
+
+        ctx.strokeStyle = "rgba(148,163,184,0.25)";
+        ctx.lineWidth = 1;
+        for (let t = -3; t <= 3; t += 1) {
+            const py = pad.top + plotH - (((t - THETA_PLOT_MIN) / (THETA_PLOT_MAX - THETA_PLOT_MIN)) * plotH);
+            ctx.beginPath();
+            ctx.moveTo(pad.left, py);
+            ctx.lineTo(W - pad.right, py);
+            ctx.stroke();
+        }
+
+        const x = (q) => pad.left + ((q - 1) / Math.max(1, MAX_DEMO_QUESTIONS - 1)) * plotW;
+        const y = (theta) => {
+            const clamped = Math.max(THETA_PLOT_MIN, Math.min(THETA_PLOT_MAX, theta));
+            return pad.top + plotH - (((clamped - THETA_PLOT_MIN) / (THETA_PLOT_MAX - THETA_PLOT_MIN)) * plotH);
+        };
+
+        ctx.font = "10px system-ui";
+        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--text-faint").trim() || "#9ca3af";
+        ctx.textAlign = "right";
+        for (let t = -3; t <= 3; t += 1) {
+            ctx.fillText(`${t}`, pad.left - 6, y(t) + 3);
+        }
+        ctx.textAlign = "center";
+        ctx.fillText("Questions", W / 2, H - 4);
+
+        demoState.users.forEach((user) => {
+            if (!user.history.length) return;
+            ctx.strokeStyle = user.color;
+            ctx.lineWidth = 2.25;
+            ctx.beginPath();
+            user.history.forEach((point, idx) => {
+                const px = x(point.q);
+                const py = y(point.posteriorTheta);
+                if (idx === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            });
+            ctx.stroke();
+
+            ctx.setLineDash([6, 4]);
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            user.history.forEach((point, idx) => {
+                const px = x(point.q);
+                const py = y(point.routingTheta);
+                if (idx === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            });
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            user.history.forEach((point) => {
+                ctx.fillStyle = point.correct ? user.color : "#f59e0b";
+                ctx.beginPath();
+                ctx.arc(x(point.q), y(point.posteriorTheta), 3.2, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        });
+    }
+
+    resetDemo();
+    ensureDemoTimer();
+    initialThetaInput.addEventListener("input", () => {
+        resetDemo();
+        ensureDemoTimer();
+    });
+    halfLifeInput.addEventListener("input", () => {
+        resetDemo();
+        ensureDemoTimer();
+    });
+    window.addEventListener("resize", drawDemo);
+    </script>
 </body>
 </html>
