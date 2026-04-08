@@ -1,0 +1,17 @@
+{
+  "id": "example",
+  "title": "Example Exam",
+  "subtitle": "Adaptive Assessment",
+  "description": "Upload a PDF via the admin panel to generate questions for this exam.",
+  "bank_file": "bank.json",
+  "reference_pdf": "reference.pdf",
+  "pdf_page_offset": 0,
+  "cat_config": {
+    "initial_theta": -2.0,
+    "se_threshold": 0.3,
+    "min_questions": 5,
+    "recency_half_life": 8.0
+  },
+  "published": false,
+  "show_reference": true
+}
