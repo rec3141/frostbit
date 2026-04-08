@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ exam.title }}</title>
     <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/theme.js"></script>
 </head>
 <body>
     <div class="container">
         <div class="card start-card">
+            <div style="text-align:right"><button class="theme-toggle" id="theme-btn" onclick="toggleTheme()"></button></div>
             <h1>{{ exam.title }}</h1>
             <h2>{{ exam.subtitle }}</h2>
             <p class="subtitle">{{ exam.description }}</p>

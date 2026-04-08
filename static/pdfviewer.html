@@ -15,6 +15,7 @@ body { background: #525659; display: flex; flex-direction: column; height: 100vh
 }
 .toolbar button:hover { background: #666; }
 .toolbar button:disabled { opacity: 0.3; cursor: default; }
+.sep { color: #666; margin: 0 2px; }
 .toolbar input {
     width: 50px; text-align: center; background: #444; border: 1px solid #666;
     color: #eee; border-radius: 4px; padding: 3px; font: 13px system-ui;
@@ -29,6 +30,11 @@ canvas { box-shadow: 0 2px 8px rgba(0,0,0,0.4); background: #fff; max-width: 100
     <input id="page-input" type="number" min="1" value="1" onchange="goTo(this.value)">
     <span id="page-count">/ --</span>
     <button id="next-btn" onclick="go(1)">&rarr;</button>
+    <span class="sep">|</span>
+    <button onclick="zoom(-0.25)">&minus;</button>
+    <span id="zoom-level">Fit</span>
+    <button onclick="zoom(0.25)">+</button>
+    <button onclick="zoomFit()">Fit</button>
 </div>
 <div class="viewer">
     <canvas id="canvas"></canvas>
@@ -40,17 +46,26 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 
 let pdf = null;
 let currentPage = 1;
+let userScale = null;  // null = fit to viewer
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
-let pdfUrl = '/pdf';  // default, overridden by parent message
+let pdfUrl = '/pdf';
 
 async function loadPdf(url) {
     if (url) pdfUrl = url;
     pdf = await pdfjsLib.getDocument(pdfUrl).promise;
     document.getElementById('page-count').textContent = `/ ${pdf.numPages}`;
     document.getElementById('page-input').max = pdf.numPages;
-    // Don't render anything — wait for parent to tell us which page
+}
+
+function getFitScale(baseViewport) {
+    const viewer = document.querySelector('.viewer');
+    return Math.min(
+        (viewer.clientWidth - 16) / baseViewport.width,
+        (viewer.clientHeight - 16) / baseViewport.height,
+        3.0
+    );
 }
 
 async function renderPage(num) {
@@ -58,19 +73,17 @@ async function renderPage(num) {
     currentPage = num;
 
     const page = await pdf.getPage(num);
-    // Scale to fit viewer width
-    const viewer = document.querySelector('.viewer');
     const baseViewport = page.getViewport({scale: 1});
-    const scale = Math.min(
-        (viewer.clientWidth - 16) / baseViewport.width,
-        (viewer.clientHeight - 16) / baseViewport.height,
-        2.0
-    );
+    const fitScale = getFitScale(baseViewport);
+    const scale = userScale || fitScale;
     const viewport = page.getViewport({scale});
 
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     await page.render({canvasContext: ctx, viewport}).promise;
+
+    document.getElementById('zoom-level').textContent =
+        userScale ? `${Math.round(scale * 100)}%` : 'Fit';
 
     document.getElementById('page-input').value = num;
     document.getElementById('prev-btn').disabled = (num <= 1);
@@ -82,6 +95,25 @@ async function renderPage(num) {
 
 window.go = function(delta) { renderPage(currentPage + delta); };
 window.goTo = function(num) { renderPage(parseInt(num) || 1); };
+window.zoom = function(delta) {
+    if (!pdf) return;
+    if (!userScale) {
+        // Get current fit scale as starting point
+        pdf.getPage(currentPage).then(page => {
+            const base = page.getViewport({scale: 1});
+            userScale = getFitScale(base);
+            userScale = Math.max(0.5, userScale + delta);
+            renderPage(currentPage);
+        });
+    } else {
+        userScale = Math.max(0.5, userScale + delta);
+        renderPage(currentPage);
+    }
+};
+window.zoomFit = function() {
+    userScale = null;
+    renderPage(currentPage);
+};
 
 // Keyboard nav
 document.addEventListener('keydown', (e) => {

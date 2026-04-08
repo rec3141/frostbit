@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ENVR3140 Exam</title>
     <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/theme.js"></script>
 </head>
 <body class="exam-body">
     <div class="exam-layout">
@@ -13,6 +14,7 @@
             <div class="exam-header">
                 <span class="student-name">{{ student_name }}</span>
                 <span class="progress" id="progress">Question 1</span>
+                <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()"></button>
                 <button class="btn btn-finish" id="finish-btn" onclick="finishExam()">Finished</button>
             </div>
 
@@ -211,10 +213,10 @@
     }
 
     const BLOOMS_COLORS = {
-        0: '#9ca3af',  // unclassified
+        0: '#fb923c',  // unclassified — orange (visible in both modes)
         1: '#4ade80',  // Remember — green
         2: '#60a5fa',  // Understand — blue
-        3: '#f59e0b',  // Apply — amber
+        3: '#fbbf24',  // Apply — amber
         4: '#a78bfa',  // Analyze — purple
         5: '#f43f5e',  // Evaluate — rose
         6: '#14b8a6',  // Create — teal
@@ -256,9 +258,14 @@
 
         ctx.clearRect(0, 0, W, H);
 
+        // Read theme colors from CSS
+        const style = getComputedStyle(document.documentElement);
+        const textFaint = style.getPropertyValue('--text-faint').trim() || '#9ca3af';
+        const lineColor = style.getPropertyValue('--accent').trim() || '#2563eb';
+
         const history = state.thetaHistory;
         if (history.length === 0) {
-            ctx.fillStyle = "#9ca3af";
+            ctx.fillStyle = textFaint;
             ctx.font = "14px system-ui";
             ctx.textAlign = "center";
             ctx.fillText("Answer questions to see your challenge level", W / 2, H / 2);
@@ -279,7 +286,7 @@
 
 
         // Line
-        ctx.strokeStyle = "#2563eb";
+        ctx.strokeStyle = lineColor;
         ctx.lineWidth = 2.5;
         ctx.lineJoin = "round";
         ctx.beginPath();
@@ -303,7 +310,7 @@
         }
 
         // X axis — time labels
-        ctx.fillStyle = "#9ca3af";
+        ctx.fillStyle = textFaint;
         ctx.font = "10px system-ui";
         ctx.textAlign = "center";
         // Pick sensible time intervals
@@ -330,7 +337,7 @@
         for (const bl of usedBlooms) {
             ctx.fillStyle = BLOOMS_COLORS[bl];
             ctx.beginPath(); ctx.arc(legX, legY, 3.5, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = "#666";
+            ctx.fillStyle = textFaint;
             ctx.fillText(BLOOMS_NAMES[bl], legX + 7, legY + 3);
             legX += 65;
         }

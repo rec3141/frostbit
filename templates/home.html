@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Frostbit — Adaptive Testing</title>
     <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/theme.js"></script>
 </head>
 <body>
     <div class="container">
         <div class="card start-card">
+            <div style="text-align:right"><button class="theme-toggle" id="theme-btn" onclick="toggleTheme()"></button></div>
             <h1>Frostbit</h1>
             <p class="subtitle">Adaptive Testing Platform</p>
 
@@ -27,6 +29,10 @@
             {% else %}
             <p class="subtitle">No exams available yet.</p>
             {% endif %}
+
+            <div style="margin-top:2rem">
+                <a href="/admin/login" style="color:var(--text-faint);font-size:0.8rem;text-decoration:none">Instructor Login</a>
+            </div>
         </div>
     </div>
 </body>
