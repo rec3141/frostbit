@@ -792,6 +792,44 @@ body {
     background: #eef2ff;
 }
 
+/* Question detail panel */
+.q-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.q-detail-body textarea,
+.q-detail-body input[type="text"] {
+    width: 100%;
+    padding: 0.5rem 0.7rem;
+    border: 1.5px solid var(--input-border);
+    border-radius: 6px;
+    font-size: 0.9rem;
+    background: var(--input-bg);
+    color: var(--text);
+    font-family: inherit;
+}
+
+.q-choices-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.q-detail-meta {
+    display: flex;
+    gap: 2rem;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.q-row { cursor: pointer; }
+.q-row:hover td { background: var(--bg); }
+
 /* Exam list */
 .exam-list {
     display: flex;

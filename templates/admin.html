@@ -279,7 +279,10 @@
         rows.sort((a, b) => {
             let va = a.cells[col].textContent.trim();
             let vb = b.cells[col].textContent.trim();
-            // Try numeric
+            // Nulls always sort to bottom
+            if (va === '-' && vb === '-') return 0;
+            if (va === '-') return 1;
+            if (vb === '-') return -1;
             const na = parseFloat(va.replace('%', ''));
             const nb = parseFloat(vb.replace('%', ''));
             if (!isNaN(na) && !isNaN(nb)) return (na - nb) * sortDir;

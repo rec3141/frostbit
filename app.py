@@ -707,7 +707,11 @@ def admin_questions():
         s = stats_map.get(q["id"], {})
         questions.append({
             "id": q["id"],
-            "question": q["question"][:80],
+            "question": q["question"],
+            "question_short": q["question"][:80],
+            "A": q.get("A", ""), "B": q.get("B", ""), "C": q.get("C", ""),
+            "D": q.get("D", ""), "E": q.get("E", ""),
+            "answer": q.get("answer", ""),
             "difficulty": q.get("difficulty", "?"),
             "difficulty_score": q.get("difficulty_score"),
             "haiku_difficulty": q.get("haiku_difficulty"),
@@ -793,6 +797,43 @@ def admin_build():
             EXAMS = load_exams()
 
     return render_template("admin_build.html", error=error, success=success)
+
+
+@app.route("/admin/api/question/edit", methods=["POST"])
+@require_admin
+def admin_edit_question():
+    data = request.get_json()
+    exam_id = data.get("exam_id")
+    qid = data.get("id")
+    exam = EXAMS.get(exam_id)
+    if not exam:
+        return jsonify({"ok": False, "error": "exam not found"})
+
+    bank_path = exam.dir / exam.config.get("bank_file", "bank.json")
+    with open(bank_path) as f:
+        bank = json.load(f)
+
+    # Find and update the question
+    updated = False
+    for q in bank:
+        if q["id"] == qid:
+            for field in ["question", "A", "B", "C", "D", "E"]:
+                if field in data:
+                    q[field] = data[field]
+            updated = True
+            break
+
+    if not updated:
+        return jsonify({"ok": False, "error": "question not found"})
+
+    with open(bank_path, "w") as f:
+        json.dump(bank, f, indent=2)
+
+    # Reload exam items
+    global EXAMS
+    EXAMS[exam_id] = Exam(exam.dir)
+
+    return jsonify({"ok": True})
 
 
 @app.route("/admin/export")
