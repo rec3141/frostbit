@@ -21,7 +21,7 @@ body { background: #525659; display: flex; flex-direction: column; height: 100vh
     color: #eee; border-radius: 4px; padding: 3px; font: 13px system-ui;
 }
 .viewer { flex: 1; overflow: auto; display: flex; justify-content: center; padding: 8px; }
-canvas { box-shadow: 0 2px 8px rgba(0,0,0,0.4); background: #fff; max-width: 100%; height: auto; }
+canvas { box-shadow: 0 2px 8px rgba(0,0,0,0.4); background: #fff; }
 </style>
 </head>
 <body>
@@ -59,12 +59,13 @@ async function loadPdf(url) {
     document.getElementById('page-input').max = pdf.numPages;
 }
 
+const RENDER_SCALE = 3;  // always render at 3x for crisp text
+
 function getFitScale(baseViewport) {
     const viewer = document.querySelector('.viewer');
     return Math.min(
         (viewer.clientWidth - 16) / baseViewport.width,
-        (viewer.clientHeight - 16) / baseViewport.height,
-        3.0
+        (viewer.clientHeight - 16) / baseViewport.height
     );
 }
 
@@ -75,15 +76,20 @@ async function renderPage(num) {
     const page = await pdf.getPage(num);
     const baseViewport = page.getViewport({scale: 1});
     const fitScale = getFitScale(baseViewport);
-    const scale = userScale || fitScale;
-    const viewport = page.getViewport({scale});
+    const displayScale = userScale || fitScale;
 
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    await page.render({canvasContext: ctx, viewport}).promise;
+    // Render at high res
+    const renderViewport = page.getViewport({scale: RENDER_SCALE});
+    canvas.width = renderViewport.width;
+    canvas.height = renderViewport.height;
+    await page.render({canvasContext: ctx, viewport: renderViewport}).promise;
+
+    // Set CSS display size (controls actual zoom)
+    canvas.style.width = (baseViewport.width * displayScale) + 'px';
+    canvas.style.height = (baseViewport.height * displayScale) + 'px';
 
     document.getElementById('zoom-level').textContent =
-        userScale ? `${Math.round(scale * 100)}%` : 'Fit';
+        userScale ? `${Math.round(displayScale / fitScale * 100)}%` : 'Fit';
 
     document.getElementById('page-input').value = num;
     document.getElementById('prev-btn').disabled = (num <= 1);
@@ -95,20 +101,14 @@ async function renderPage(num) {
 
 window.go = function(delta) { renderPage(currentPage + delta); };
 window.goTo = function(num) { renderPage(parseInt(num) || 1); };
-window.zoom = function(delta) {
+window.zoom = async function(delta) {
     if (!pdf) return;
-    if (!userScale) {
-        // Get current fit scale as starting point
-        pdf.getPage(currentPage).then(page => {
-            const base = page.getViewport({scale: 1});
-            userScale = getFitScale(base);
-            userScale = Math.max(0.5, userScale + delta);
-            renderPage(currentPage);
-        });
-    } else {
-        userScale = Math.max(0.5, userScale + delta);
-        renderPage(currentPage);
-    }
+    const page = await pdf.getPage(currentPage);
+    const base = page.getViewport({scale: 1});
+    const fitScale = getFitScale(base);
+    if (!userScale) userScale = fitScale;
+    userScale = Math.max(fitScale * 0.5, userScale + delta * fitScale);
+    renderPage(currentPage);
 };
 window.zoomFit = function() {
     userScale = null;

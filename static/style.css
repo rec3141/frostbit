@@ -827,16 +827,31 @@ body {
     background: #eef2ff;
 }
 
-/* Question detail panel */
-.q-detail-header {
+/* Inline question editor */
+.q-editor {
+    padding: 1rem;
+    background: var(--bg);
+    border-radius: 8px;
+    margin: 0.25rem 0;
+}
+
+.q-editor-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
 }
 
-.q-detail-body textarea,
-.q-detail-body input[type="text"] {
+.q-editor-meta {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-left: 1rem;
+}
+
+.q-editor textarea,
+.q-editor input[type="text"] {
     width: 100%;
     padding: 0.5rem 0.7rem;
     border: 1.5px solid var(--input-border);
@@ -847,23 +862,195 @@ body {
     font-family: inherit;
 }
 
+.q-editor textarea:focus,
+.q-editor input[type="text"]:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
 .q-choices-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.5rem;
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
 }
 
-.q-detail-meta {
-    display: flex;
-    gap: 2rem;
-    margin-bottom: 1rem;
-    font-size: 0.85rem;
-    color: var(--text-muted);
+.q-editor-row td {
+    padding: 0 !important;
+    border-bottom: none !important;
 }
 
 .q-row { cursor: pointer; }
 .q-row:hover td { background: var(--bg); }
+
+/* Build form */
+.form-row-2col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.file-upload {
+    position: relative;
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 2rem;
+    text-align: center;
+    transition: border-color 0.2s;
+    cursor: pointer;
+}
+
+.file-upload:hover {
+    border-color: var(--accent);
+}
+
+.file-upload input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.file-upload-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.file-upload-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    background: var(--border);
+    font-weight: 700;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+}
+
+.slider-range {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: var(--text-faint);
+    margin-top: -0.2rem;
+}
+
+.pdf-info {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.build-estimate {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.5rem;
+}
+
+.estimate-card {
+    flex: 1;
+    text-align: center;
+    padding: 0.5rem;
+    background: var(--bg);
+    border-radius: 6px;
+}
+
+.estimate-number {
+    display: block;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--accent);
+}
+
+.estimate-label {
+    font-size: 0.7rem;
+    color: var(--text-faint);
+}
+
+/* Build status steps */
+.build-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0.5rem 0;
+}
+
+.build-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 0.75rem 0;
+    position: relative;
+}
+
+.build-step:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    left: 9px;
+    top: 2.2rem;
+    bottom: -0.75rem;
+    width: 2px;
+    background: var(--border);
+}
+
+.step-dot {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--border);
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.step-done .step-dot {
+    background: #16a34a;
+}
+
+.step-active .step-dot {
+    background: var(--accent);
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.2);
+}
+
+.step-done::after {
+    background: #16a34a !important;
+}
+
+.step-info strong {
+    display: block;
+    font-size: 0.9rem;
+}
+
+.step-info span {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.build-log {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
 
 /* Exam list */
 .exam-list {

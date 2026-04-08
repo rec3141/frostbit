@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Build Status — {{ config.title or exam_id }}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/theme.js"></script>
+</head>
+<body>
+    <div class="admin-container">
+        <div class="admin-header">
+            <h1>Building: {{ config.title or exam_id }}</h1>
+            <div class="admin-nav">
+                <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()"></button>
+                <a href="/admin" class="nav-link">Dashboard</a>
+            </div>
+        </div>
+
+        <!-- Progress -->
+        <div class="card">
+            <h3>Build Progress</h3>
+            <div class="build-steps">
+                <div class="build-step {{ 'step-done' if status.stage in ['generating','validating','post-processing','complete'] else 'step-active' if status.stage == 'starting' else '' }}">
+                    <div class="step-dot"></div>
+                    <div class="step-info">
+                        <strong>Upload</strong>
+                        <span>PDF uploaded, {{ config.total_pages or '?' }} pages</span>
+                    </div>
+                </div>
+                <div class="build-step {{ 'step-done' if status.stage in ['validating','post-processing','complete'] else 'step-active' if status.stage == 'generating' else '' }}">
+                    <div class="step-dot"></div>
+                    <div class="step-info">
+                        <strong>Generate Questions</strong>
+                        {% if status.details.get('generated') %}
+                        <span>{{ status.details.generated }}/{{ status.details.expected or '?' }} chunks</span>
+                        {% else %}
+                        <span>5 easy + 5 medium + 5 hard per 5-page chunk</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="build-step {{ 'step-done' if status.stage in ['post-processing','complete'] else 'step-active' if status.stage == 'validating' else '' }}">
+                    <div class="step-dot"></div>
+                    <div class="step-info">
+                        <strong>Validate & Filter</strong>
+                        {% if status.details.get('validated') %}
+                        <span>{{ status.details.validated }}/{{ status.details.total }} validated</span>
+                        {% else %}
+                        <span>Haiku + Sonnet verify answers and flag issues</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="build-step {{ 'step-done' if status.stage == 'complete' else 'step-active' if status.stage == 'post-processing' else '' }}">
+                    <div class="step-dot"></div>
+                    <div class="step-info">
+                        <strong>Classify & Calibrate</strong>
+                        {% if status.details.get('questions') %}
+                        <span>{{ status.details.questions }} questions, {{ status.details.blooms_classified }} Bloom's, {{ status.details.calibrated }} calibrated</span>
+                        {% else %}
+                        <span>Bloom's taxonomy + model difficulty calibration</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% if status.stage == 'complete' %}
+                <div class="build-step step-done">
+                    <div class="step-dot"></div>
+                    <div class="step-info">
+                        <strong>Ready</strong>
+                        <span>{{ status.details.questions }} questions — <a href="/admin?exam_id={{ exam_id }}">Go to dashboard</a></span>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Build log -->
+        <div class="card">
+            <h3>Build Log</h3>
+            <pre class="build-log">{{ log_tail or 'Waiting for output...' }}</pre>
+            <button class="btn btn-secondary btn-sm" onclick="location.reload()" style="margin-top:0.5rem">Refresh</button>
+        </div>
+    </div>
+</body>
+</html>

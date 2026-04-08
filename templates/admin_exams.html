@@ -23,6 +23,9 @@
                     <h3>{{ exam.title }}</h3>
                     <p>{{ exam.subtitle }}</p>
                     <span class="exam-item-count">{{ exam.items|length }} questions</span>
+                    {% if exam.items|length == 0 %}
+                    <a href="/admin/build/{{ exam.id }}/status" class="status-badge status-active" style="margin-left:0.5rem">Building...</a>
+                    {% endif %}
                 </div>
             </a>
             {% endfor %}

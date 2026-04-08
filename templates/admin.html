@@ -13,7 +13,8 @@
             <div class="admin-nav">
                 <a href="/admin" class="nav-link active">Students</a>
                 <a href="/admin/questions" class="nav-link">Questions</a>
-                <a href="/admin/export" class="nav-link">Export CSV</a>
+                <a href="/admin/exam/{{ exam.id }}/settings" class="nav-link">Settings</a>
+                <a href="/admin/export?exam_id={{ exam.id }}" class="nav-link">Export CSV</a>
                 <a href="/admin/logout" class="nav-link">Logout</a>
             </div>
         </div>

@@ -17,11 +17,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from openai import OpenAI
 
-PROJECT_DIR = Path(__file__).parent
-EXAM_PATH = PROJECT_DIR / "exam_bank_full.json"
-RESULTS_DIR = PROJECT_DIR / "calibration_results"
-RESULTS_DIR.mkdir(exist_ok=True)
-OUTPUT_PATH = PROJECT_DIR / "exam_bank_calibrated.json"
+PROJECT_DIR = Path(__file__).parent.parent
+EXAM_PATH = None
+RESULTS_DIR = None
+OUTPUT_PATH = None
 BATCH_SIZE = 10
 MAX_RETRIES = 5
 RETRY_DELAY = 15
@@ -38,14 +37,19 @@ FREE_MODELS = [
 ]
 
 
-def load_api_key():
-    env_path = PROJECT_DIR / ".env.local"
-    if env_path.exists():
-        for line in env_path.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip())
+def load_env(*search_dirs):
+    for d in list(search_dirs) + [PROJECT_DIR]:
+        env_path = Path(d) / ".env.local"
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, val = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), val.strip())
+
+
+def load_api_key(*search_dirs):
+    load_env(*search_dirs)
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
         print("ERROR: Set OPENROUTER_API_KEY in .env.local or environment", flush=True)
@@ -332,18 +336,32 @@ def compute_ensemble_scores(exam):
 
 
 def main():
+    global EXAM_PATH, RESULTS_DIR, OUTPUT_PATH
+
+    import argparse
+    parser = argparse.ArgumentParser(description="Calibrate question difficulty via OpenRouter")
+    parser.add_argument("--exam-dir", type=Path, required=True,
+                        help="Path to exam directory")
+    parser.add_argument("--workers", type=int, default=3)
+    parser.add_argument("--score-only", action="store_true",
+                        help="Just recompute scores from existing results")
+    cli_args = parser.parse_args()
+
+    exam_dir = cli_args.exam_dir.resolve()
+    EXAM_PATH = exam_dir / "bank.json"
+    RESULTS_DIR = exam_dir / "calibration_results"
+    RESULTS_DIR.mkdir(exist_ok=True)
+    OUTPUT_PATH = exam_dir / "bank.json"
+
     with open(EXAM_PATH) as f:
         exam = json.load(f)
     print(f"Loaded {len(exam)} questions", flush=True)
 
-    score_only = "--score-only" in sys.argv
-    workers = 3
-    for i, a in enumerate(sys.argv):
-        if a == "--workers" and i + 1 < len(sys.argv):
-            workers = int(sys.argv[i + 1])
+    score_only = cli_args.score_only
+    workers = cli_args.workers
 
     if not score_only:
-        api_key = load_api_key()
+        api_key = load_api_key(exam_dir)
         client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
 
         # Filter to models not yet done

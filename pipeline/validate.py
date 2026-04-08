@@ -30,27 +30,31 @@ from openai import OpenAI
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-PROJECT_DIR = Path(__file__).parent
-PDF_PATH = PROJECT_DIR / "mbteee_report.pdf"
-CHUNKS_DIR = PROJECT_DIR / "generated_questions"
-OUTPUT_DIR = PROJECT_DIR / "validation_results"
-OUTPUT_DIR.mkdir(exist_ok=True)
+PROJECT_DIR = Path(__file__).parent.parent
+PDF_PATH = None
+CHUNKS_DIR = None
+OUTPUT_DIR = None
 
 HAIKU_MODEL = "anthropic/claude-haiku-4.5"
-SONNET_MODEL = "anthropic/claude-sonnet-4"
+SONNET_MODEL = "anthropic/claude-sonnet-4.6"
 MAX_RETRIES = 3
 RETRY_DELAY = 5
 POLL_INTERVAL = 5  # seconds between polls for new chunks
 
 
-def load_api_key():
-    env_path = PROJECT_DIR / ".env.local"
-    if env_path.exists():
-        for line in env_path.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, val = line.split("=", 1)
-                os.environ.setdefault(key.strip(), val.strip())
+def load_env(*search_dirs):
+    for d in list(search_dirs) + [PROJECT_DIR]:
+        env_path = Path(d) / ".env.local"
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, val = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), val.strip())
+
+
+def load_api_key(*search_dirs):
+    load_env(*search_dirs)
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
         print("ERROR: Set OPENROUTER_API_KEY in .env.local or environment", flush=True)
@@ -236,14 +240,24 @@ def result_path_for(chunk_path: Path) -> Path:
 # Main
 # ---------------------------------------------------------------------------
 def main():
+    global PDF_PATH, CHUNKS_DIR, OUTPUT_DIR
+
     import argparse
     parser = argparse.ArgumentParser(description="Stream-validate generated chunks")
+    parser.add_argument("--exam-dir", type=Path, required=True,
+                        help="Path to exam directory")
     parser.add_argument("--workers", type=int, default=5, help="Concurrent workers")
     parser.add_argument("--timeout", type=int, default=120,
                         help="Exit after N seconds with no new chunks (default: 120)")
     args = parser.parse_args()
 
-    api_key = load_api_key()
+    exam_dir = args.exam_dir.resolve()
+    PDF_PATH = exam_dir / "reference.pdf"
+    CHUNKS_DIR = exam_dir / "generated_questions"
+    OUTPUT_DIR = exam_dir / "validation_results"
+    OUTPUT_DIR.mkdir(exist_ok=True)
+
+    api_key = load_api_key(exam_dir)
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
 
     validated_chunks = set()

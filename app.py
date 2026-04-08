@@ -553,10 +553,7 @@ def admin_logout():
 @app.route("/admin")
 @require_admin
 def admin():
-    # If only one exam, go directly to it
     exam_id = request.args.get("exam_id")
-    if not exam_id and len(EXAMS) == 1:
-        exam_id = list(EXAMS.keys())[0]
 
     if not exam_id:
         return render_template("admin_exams.html", exams=EXAMS.values())
@@ -732,6 +729,7 @@ def admin_questions():
 @app.route("/admin/build", methods=["GET", "POST"])
 @require_admin
 def admin_build():
+    global EXAMS
     import subprocess
     error = None
     success = None
@@ -742,6 +740,8 @@ def admin_build():
         subtitle = request.form.get("subtitle", "").strip()
         description = request.form.get("description", "").strip()
         pdf_offset = int(request.form.get("pdf_offset", 0))
+        page_start = request.form.get("page_start", "").strip()
+        page_end = request.form.get("page_end", "").strip()
         auto_build = request.form.get("auto_build") == "on"
         pdf_file = request.files.get("pdf")
 
@@ -760,6 +760,46 @@ def admin_build():
             pdf_path = exam_dir / "reference.pdf"
             pdf_file.save(str(pdf_path))
 
+            # Get page count
+            total_pages = None
+            try:
+                result = subprocess.run(
+                    ["pdfinfo", str(pdf_path)], capture_output=True, text=True
+                )
+                for line in result.stdout.splitlines():
+                    if line.startswith("Pages:"):
+                        total_pages = int(line.split(":")[1].strip())
+                        break
+            except Exception:
+                pass
+
+            # Auto-detect PDF page offset by finding first printed page number
+            detected_offset = 0
+            if total_pages:
+                try:
+                    for pdf_page in range(1, min(total_pages + 1, 20)):
+                        result = subprocess.run(
+                            ["pdftotext", "-f", str(pdf_page), "-l", str(pdf_page),
+                             "-layout", str(pdf_path), "-"],
+                            capture_output=True, text=True
+                        )
+                        # Look for a standalone page number (typically at bottom)
+                        lines = result.stdout.strip().splitlines()
+                        for line in reversed(lines[-5:] if len(lines) >= 5 else lines):
+                            stripped = line.strip()
+                            if stripped.isdigit() and 1 <= int(stripped) <= 500:
+                                printed_page = int(stripped)
+                                detected_offset = pdf_page - printed_page
+                                break
+                        if detected_offset != 0:
+                            break
+                except Exception:
+                    pass
+
+            # Use user override if provided, otherwise auto-detected
+            if pdf_offset == 0 and detected_offset != 0:
+                pdf_offset = detected_offset
+
             # Write config
             config = {
                 "id": exam_id,
@@ -769,6 +809,8 @@ def admin_build():
                 "bank_file": "bank.json",
                 "reference_pdf": "reference.pdf",
                 "pdf_page_offset": pdf_offset,
+                "pdf_page_offset_auto": detected_offset,
+                "total_pages": total_pages,
                 "cat_config": {
                     "initial_theta": -2.0,
                     "se_threshold": 0.3,
@@ -779,24 +821,124 @@ def admin_build():
             with open(exam_dir / "exam.json", "w") as f:
                 json.dump(config, f, indent=2)
 
+            # Reload exams
+            EXAMS = load_exams()
+
             if auto_build:
-                # Kick off build in background
-                venv_python = str(PROJECT_DIR / ".venv" / "bin" / "python3")
+                build_cmd = [
+                    str(PROJECT_DIR / ".venv" / "bin" / "python3"),
+                    "-m", "pipeline.build_exam", str(exam_dir),
+                    "--workers", "5",
+                ]
+                if page_start and page_end:
+                    build_cmd.extend(["--pages", f"{page_start}-{page_end}"])
+
                 subprocess.Popen(
-                    [venv_python, "-m", "pipeline.build_exam", str(exam_dir)],
+                    build_cmd,
                     cwd=str(PROJECT_DIR),
                     stdout=open(str(exam_dir / "build.log"), "w"),
                     stderr=subprocess.STDOUT,
                 )
-                success = f"Exam '{exam_id}' created! Build running in background — check {exam_dir}/build.log"
+                return redirect(url_for("admin_build_status", exam_id=exam_id))
             else:
-                success = f"Exam '{exam_id}' created. Run: python3 -m pipeline.build_exam exams/{exam_id}/"
-
-            # Reload exams
-            global EXAMS
-            EXAMS = load_exams()
+                return redirect(url_for("admin"))
 
     return render_template("admin_build.html", error=error, success=success)
+
+
+@app.route("/admin/build/<exam_id>/status")
+@require_admin
+def admin_build_status(exam_id):
+    exam_dir = EXAMS_DIR / exam_id
+    if not exam_dir.exists():
+        return redirect(url_for("admin_build"))
+
+    # Read config
+    config = {}
+    config_path = exam_dir / "exam.json"
+    if config_path.exists():
+        with open(config_path) as f:
+            config = json.load(f)
+
+    # Check build progress
+    status = {"stage": "pending", "details": {}}
+
+    gen_dir = exam_dir / "generated_questions"
+    val_dir = exam_dir / "validation_results"
+    bank_path = exam_dir / "bank.json"
+    log_path = exam_dir / "build.log"
+
+    # Count chunks
+    gen_chunks = len(list(gen_dir.glob("chunk_*.json"))) if gen_dir.exists() else 0
+    val_chunks = len(list(val_dir.glob("val_chunk_*.json"))) if val_dir.exists() else 0
+    total_pages = config.get("total_pages", 0)
+    expected_chunks = (total_pages + 4) // 5 if total_pages else 0
+
+    if bank_path.exists():
+        with open(bank_path) as f:
+            bank = json.load(f)
+        has_blooms = sum(1 for q in bank if q.get("blooms_level"))
+        has_calibration = sum(1 for q in bank if q.get("difficulty_score") is not None)
+        status["stage"] = "complete" if has_blooms and has_calibration else "post-processing"
+        status["details"] = {
+            "questions": len(bank),
+            "blooms_classified": has_blooms,
+            "calibrated": has_calibration,
+        }
+    elif val_chunks > 0:
+        status["stage"] = "validating"
+        status["details"] = {"validated": val_chunks, "total": gen_chunks}
+    elif gen_chunks > 0:
+        status["stage"] = "generating"
+        status["details"] = {"generated": gen_chunks, "expected": expected_chunks}
+    else:
+        status["stage"] = "starting"
+
+    # Read last lines of build log
+    log_tail = ""
+    if log_path.exists():
+        lines = log_path.read_text().splitlines()
+        log_tail = "\n".join(lines[-30:])
+
+    return render_template("admin_build_status.html",
+                           exam_id=exam_id, config=config, status=status,
+                           log_tail=log_tail)
+
+
+@app.route("/admin/exam/<exam_id>/settings", methods=["GET", "POST"])
+@require_admin
+def admin_exam_settings(exam_id):
+    global EXAMS
+    exam = EXAMS.get(exam_id)
+    if not exam:
+        return redirect(url_for("admin"))
+
+    config_path = exam.dir / "exam.json"
+    saved = False
+
+    if request.method == "POST":
+        with open(config_path) as f:
+            config = json.load(f)
+
+        config["title"] = request.form.get("title", config["title"])
+        config["subtitle"] = request.form.get("subtitle", config.get("subtitle", ""))
+        config["description"] = request.form.get("description", config.get("description", ""))
+        config["pdf_page_offset"] = int(request.form.get("pdf_offset", 0))
+
+        cat = config.get("cat_config", {})
+        cat["initial_theta"] = float(request.form.get("initial_theta", -2.0))
+        cat["recency_half_life"] = float(request.form.get("half_life", 8))
+        config["cat_config"] = cat
+
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=2)
+
+        # Reload
+        EXAMS[exam_id] = Exam(exam.dir)
+        exam = EXAMS[exam_id]
+        saved = True
+
+    return render_template("admin_exam_settings.html", exam=exam, saved=saved)
 
 
 @app.route("/admin/api/question/edit", methods=["POST"])

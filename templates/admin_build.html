@@ -5,12 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Build New Exam — Frostbit</title>
     <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/theme.js"></script>
 </head>
 <body>
     <div class="admin-container">
         <div class="admin-header">
             <h1>Build New Exam</h1>
             <div class="admin-nav">
+                <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()"></button>
                 <a href="/admin" class="nav-link">Back</a>
             </div>
         </div>
@@ -24,58 +26,148 @@
                 <div class="success-msg">{{ success }}</div>
                 {% endif %}
 
-                <div class="form-group">
-                    <label for="exam_id">Exam ID</label>
-                    <input type="text" id="exam_id" name="exam_id" required
-                           placeholder="bio101-midterm" pattern="[a-z0-9_-]+"
-                           title="Lowercase letters, numbers, hyphens, underscores only">
-                    <small class="form-hint">URL-safe identifier (e.g. bio101-midterm)</small>
-                </div>
+                <h3 style="margin-bottom:1rem">Exam Details</h3>
 
-                <div class="form-group">
-                    <label for="title">Exam Title</label>
-                    <input type="text" id="title" name="title" required
-                           placeholder="BIO101 Introduction to Biology">
-                </div>
-
-                <div class="form-group">
-                    <label for="subtitle">Subtitle</label>
-                    <input type="text" id="subtitle" name="subtitle"
-                           placeholder="Midterm Exam" value="Adaptive Exam">
-                </div>
-
-                <div class="form-group">
-                    <label for="description">Description</label>
-                    <textarea id="description" name="description" rows="3"
-                              placeholder="Open-book adaptive exam covering chapters 1-5..."></textarea>
-                </div>
-
-                <div class="form-group">
-                    <label for="pdf">Source PDF</label>
-                    <input type="file" id="pdf" name="pdf" accept=".pdf" required>
-                    <small class="form-hint">The textbook or reference material to generate questions from</small>
-                </div>
-
-                <div class="form-group">
-                    <label for="pdf_offset">PDF Page Offset</label>
-                    <input type="number" id="pdf_offset" name="pdf_offset" value="0"
-                           min="-20" max="20">
-                    <small class="form-hint">Difference between PDF page numbers and printed page numbers (usually 0-7)</small>
-                </div>
-
-                <div class="form-row">
+                <div class="form-row-2col">
                     <div class="form-group">
-                        <label>
-                            <input type="checkbox" name="auto_build" checked>
-                            Auto-build questions after upload
-                        </label>
-                        <small class="form-hint">Generates questions, validates, calibrates — takes ~1 hour</small>
+                        <label for="exam_id">Exam ID</label>
+                        <input type="text" id="exam_id" name="exam_id" required
+                               placeholder="bio101-midterm" pattern="[a-z0-9_-]+"
+                               title="Lowercase letters, numbers, hyphens, underscores only">
+                        <small class="form-hint">URL-safe identifier</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="title">Exam Title</label>
+                        <input type="text" id="title" name="title" required
+                               placeholder="BIO101 Introduction to Biology">
                     </div>
                 </div>
 
-                <button type="submit" class="btn btn-primary">Create Exam</button>
+                <div class="form-row-2col">
+                    <div class="form-group">
+                        <label for="subtitle">Subtitle</label>
+                        <input type="text" id="subtitle" name="subtitle"
+                               placeholder="Midterm Exam" value="Adaptive Exam">
+                    </div>
+                    <div class="form-group">
+                        <label for="pdf_offset">PDF Page Offset</label>
+                        <input type="number" id="pdf_offset" name="pdf_offset" value="0"
+                               min="-20" max="20">
+                        <small class="form-hint">Auto-detected on upload. Fine-tune in exam settings later.</small>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="description">Description (shown to students)</label>
+                    <textarea id="description" name="description" rows="2"
+                              placeholder="Open-book adaptive exam covering chapters 1-5..."></textarea>
+                </div>
+
+                <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
+                <h3 style="margin-bottom:1rem">Source Material</h3>
+
+                <div class="form-group">
+                    <label for="pdf">Reference PDF</label>
+                    <div class="file-upload" id="file-upload">
+                        <input type="file" id="pdf" name="pdf" accept=".pdf" required
+                               onchange="handleFileSelect(this)">
+                        <div class="file-upload-label" id="file-label">
+                            <span class="file-upload-icon">PDF</span>
+                            <span>Drop a PDF here or click to browse</span>
+                        </div>
+                    </div>
+                    <div id="pdf-info" style="display:none" class="pdf-info">
+                        <span id="pdf-name"></span>
+                        <span id="pdf-size"></span>
+                    </div>
+                </div>
+
+                <div class="form-row-2col">
+                    <div class="form-group">
+                        <label for="page_start">Start Page (optional)</label>
+                        <input type="number" id="page_start" name="page_start" min="1"
+                               placeholder="First page">
+                        <small class="form-hint">PDF page number to start from</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="page_end">End Page (optional)</label>
+                        <input type="number" id="page_end" name="page_end" min="1"
+                               placeholder="Last page">
+                        <small class="form-hint">Leave blank for all pages</small>
+                    </div>
+                </div>
+
+                <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
+                <h3 style="margin-bottom:1rem">Build Options</h3>
+
+                <div class="form-group">
+                    <label for="q_per_page">Questions per page: <strong id="qpp-label">3</strong></label>
+                    <input type="range" id="q_per_page" name="q_per_page" min="1" max="10" value="3"
+                           oninput="document.getElementById('qpp-label').textContent=this.value; updateEstimate()">
+                    <div class="slider-range">
+                        <span>1 (sparse)</span>
+                        <span>10 (dense)</span>
+                    </div>
+                    <small class="form-hint">Higher = more questions but longer build time. Split evenly across easy/medium/hard.</small>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" name="auto_build" checked>
+                        Start building immediately after upload
+                    </label>
+                    <small class="form-hint">Generates questions, validates, classifies, calibrates. Takes roughly 1 hour per 100 pages.</small>
+                </div>
+
+                <div class="build-estimate" id="build-estimate" style="display:none">
+                    <div class="estimate-card">
+                        <span class="estimate-number" id="est-pages">0</span>
+                        <span class="estimate-label">pages</span>
+                    </div>
+                    <div class="estimate-card">
+                        <span class="estimate-number" id="est-chunks">0</span>
+                        <span class="estimate-label">chunks (5 pages each)</span>
+                    </div>
+                    <div class="estimate-card">
+                        <span class="estimate-number" id="est-questions">~0</span>
+                        <span class="estimate-label">raw questions</span>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary" style="margin-top:1rem">Create Exam</button>
             </form>
         </div>
     </div>
+
+    <script>
+    function handleFileSelect(input) {
+        const file = input.files[0];
+        if (!file) return;
+        document.getElementById('file-label').innerHTML =
+            `<span class="file-upload-icon">PDF</span><span>${file.name}</span>`;
+        document.getElementById('pdf-info').style.display = 'flex';
+        document.getElementById('pdf-name').textContent = file.name;
+        document.getElementById('pdf-size').textContent =
+            (file.size / 1024 / 1024).toFixed(1) + ' MB';
+        updateEstimate();
+    }
+
+    function updateEstimate() {
+        const start = parseInt(document.getElementById('page_start').value) || 1;
+        const end = parseInt(document.getElementById('page_end').value) || 0;
+        const qpp = parseInt(document.getElementById('q_per_page').value) || 3;
+        if (end > 0 && end >= start) {
+            const pages = end - start + 1;
+            const chunks = Math.ceil(pages / 5);
+            const questions = pages * qpp;
+            document.getElementById('est-pages').textContent = pages;
+            document.getElementById('est-chunks').textContent = chunks;
+            document.getElementById('est-questions').textContent = '~' + questions;
+            document.getElementById('build-estimate').style.display = 'flex';
+        }
+    }
+    document.getElementById('page_start').addEventListener('input', updateEstimate);
+    document.getElementById('page_end').addEventListener('input', updateEstimate);
+    </script>
 </body>
 </html>

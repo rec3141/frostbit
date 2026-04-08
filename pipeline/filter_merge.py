@@ -1,27 +1,36 @@
 #!/usr/bin/env python3
 """
-Filter validated questions and merge with existing 286 hard questions.
+Filter validated questions and output a clean exam bank.
 
 Filtering rules:
   - Drop if either model got it wrong
   - Drop if either model flagged a quality issue
   - Keep "not_in_source" flags (artifact of limited context window)
 
-Then merge with the existing hard question bank and output a unified exam bank.
-
 Usage:
-    python3 filter_and_merge.py
+    python3 filter_merge.py --exam-dir /path/to/exam
 """
 
 import json
+import os
 import random
 from pathlib import Path
 
-PROJECT_DIR = Path(__file__).parent
-VALIDATED_PATH = PROJECT_DIR / "validation_results" / "all_validated.json"
-HARD_QUESTIONS_PATH = PROJECT_DIR / "exam_compact.json"
-OUTPUT_PATH = PROJECT_DIR / "exam_bank_full.json"
-STATS_PATH = PROJECT_DIR / "filter_stats.json"
+PROJECT_DIR = Path(__file__).parent.parent
+VALIDATED_PATH = None
+OUTPUT_PATH = None
+STATS_PATH = None
+
+
+def load_env(*search_dirs):
+    for d in list(search_dirs) + [PROJECT_DIR]:
+        env_path = Path(d) / ".env.local"
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, val = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), val.strip())
 
 # Flags to ignore during filtering (artifacts, not quality issues)
 IGNORABLE_FLAGS = {"not_in_source", "missing source material"}
@@ -31,26 +40,6 @@ def load_validated():
     with open(VALIDATED_PATH) as f:
         return json.load(f)
 
-
-def load_hard_questions():
-    """Load existing 286 hard questions and normalize format."""
-    with open(HARD_QUESTIONS_PATH) as f:
-        raw = json.load(f)
-
-    questions = []
-    for q in raw:
-        questions.append({
-            "question": q["q"],
-            "A": q["a"].split(") ", 1)[1] if ") " in q["a"] else q["a"],
-            "B": q["b"].split(") ", 1)[1] if ") " in q["b"] else q["b"],
-            "C": q["c"].split(") ", 1)[1] if ") " in q["c"] else q["c"],
-            "D": q["d"].split(") ", 1)[1] if ") " in q["d"] else q["d"],
-            "E": q["e"].split(") ", 1)[1] if ") " in q["e"] else q["e"],
-            "answer": q["answer"],
-            "difficulty": "hard",
-            "original_id": q["id"],
-        })
-    return questions
 
 
 def is_ignorable_flag(flag: str | None) -> bool:
@@ -115,29 +104,23 @@ def filter_questions(validated: list[dict]) -> tuple[list[dict], dict]:
     return kept, stats
 
 
-def merge_and_renumber(filtered: list[dict], hard: list[dict]) -> list[dict]:
-    """Merge filtered new questions with hard questions, shuffle, and renumber."""
-    combined = filtered + hard
-
-    # Shuffle within difficulty tiers to mix page sources
-    rng = random.Random(3140)
-    easy = [q for q in combined if q["difficulty"] == "easy"]
-    medium = [q for q in combined if q["difficulty"] == "medium"]
-    hard_qs = [q for q in combined if q["difficulty"] == "hard"]
-    rng.shuffle(easy)
-    rng.shuffle(medium)
-    rng.shuffle(hard_qs)
-
-    # Combine: easy, medium, hard
-    merged = easy + medium + hard_qs
-    for i, q in enumerate(merged, 1):
-        q["id"] = i
-        q.pop("original_id", None)
-
-    return merged
-
 
 def main():
+    global VALIDATED_PATH, OUTPUT_PATH, STATS_PATH
+
+    import argparse
+    parser = argparse.ArgumentParser(description="Filter validated questions")
+    parser.add_argument("--exam-dir", type=Path, required=True,
+                        help="Path to exam directory")
+    args = parser.parse_args()
+
+    exam_dir = args.exam_dir.resolve()
+    VALIDATED_PATH = exam_dir / "validation_results" / "all_validated.json"
+    OUTPUT_PATH = exam_dir / "bank.json"
+    STATS_PATH = exam_dir / "filter_stats.json"
+
+    load_env(exam_dir)
+
     print("Loading validated questions...", flush=True)
     validated = load_validated()
     print(f"  {len(validated)} questions loaded", flush=True)
@@ -156,12 +139,17 @@ def main():
     print(f"    Medium: {stats['kept_medium']}")
     print(f"    Hard:   {stats['kept_hard']}")
 
-    print(f"\nLoading existing hard questions...", flush=True)
-    hard = load_hard_questions()
-    print(f"  {len(hard)} hard questions loaded", flush=True)
-
-    print("Merging and renumbering...", flush=True)
-    merged = merge_and_renumber(filtered, hard)
+    # Shuffle within difficulty tiers and renumber
+    rng = random.Random(3140)
+    easy = [q for q in filtered if q["difficulty"] == "easy"]
+    medium = [q for q in filtered if q["difficulty"] == "medium"]
+    hard_qs = [q for q in filtered if q["difficulty"] == "hard"]
+    rng.shuffle(easy)
+    rng.shuffle(medium)
+    rng.shuffle(hard_qs)
+    merged = easy + medium + hard_qs
+    for i, q in enumerate(merged, 1):
+        q["id"] = i
 
     with open(OUTPUT_PATH, "w") as f:
         json.dump(merged, f, indent=2)

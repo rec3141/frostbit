@@ -110,41 +110,44 @@ def main():
     val_dir = exam_dir / "validation_results"
     bank_path = exam_dir / "bank.json"
 
+    exam_arg = ["--exam-dir", str(exam_dir)]
+
     # Step 1: Generate questions
     if not bank_path.exists() or args.resume:
         run_step("Step 1: Generating questions", [
             venv_python, str(PIPELINE_DIR / "generate.py"),
-            "--workers", str(args.workers),
-        ], cwd=str(exam_dir))
+            *exam_arg, "--workers", str(args.workers),
+        ])
 
     # Step 2: Validate (streaming — picks up chunks as they appear)
     all_gen = gen_dir / "all_generated_questions.json"
     if all_gen.exists() and not (val_dir / "all_validated.json").exists():
         run_step("Step 2: Validating questions", [
             venv_python, str(PIPELINE_DIR / "validate.py"),
-            "--workers", str(args.workers),
+            *exam_arg, "--workers", str(args.workers),
             "--timeout", "60",
-        ], cwd=str(exam_dir))
+        ])
 
     # Step 3: Filter and merge
     if (val_dir / "all_validated.json").exists() and not bank_path.exists():
         run_step("Step 3: Filtering and merging", [
             venv_python, str(PIPELINE_DIR / "filter_merge.py"),
-        ], cwd=str(exam_dir))
+            *exam_arg,
+        ])
 
     # Step 4: Classify Bloom's taxonomy
     if bank_path.exists():
         run_step("Step 4: Classifying Bloom's taxonomy", [
             venv_python, str(PIPELINE_DIR / "classify_blooms.py"),
-            "--workers", "3",
-        ], cwd=str(exam_dir))
+            *exam_arg, "--workers", "1",
+        ])
 
     # Step 5: Calibrate difficulty (optional)
     if not args.skip_calibrate and bank_path.exists():
         run_step("Step 5: Calibrating difficulty (remote models)", [
             venv_python, str(PIPELINE_DIR / "calibrate_remote.py"),
-            "--workers", "1",
-        ], cwd=str(exam_dir))
+            *exam_arg, "--workers", "1",
+        ])
 
     # Summary
     if bank_path.exists():

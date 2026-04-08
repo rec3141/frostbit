@@ -28,38 +28,42 @@ from pathlib import Path
 from openai import OpenAI
 
 # ---------------------------------------------------------------------------
-# Config
+# Config (overridden by --exam-dir)
 # ---------------------------------------------------------------------------
-PROJECT_DIR = Path(__file__).parent
-PDF_PATH = PROJECT_DIR / "mbteee_report.pdf"
-OUTPUT_DIR = PROJECT_DIR / "generated_questions"
-OUTPUT_DIR.mkdir(exist_ok=True)
+PROJECT_DIR = Path(__file__).parent.parent  # frostbit root
+PDF_PATH = None  # set in main()
+OUTPUT_DIR = None  # set in main()
 
 CHUNK_SIZE = 5          # pages per batch
 DPI = 150               # resolution for page rendering (balance quality vs tokens)
-MODEL = "anthropic/claude-sonnet-4"
+MODEL = "anthropic/claude-sonnet-4.6"
 MAX_RETRIES = 3
 RETRY_DELAY = 5         # seconds
 
 # Load API key from .env.local
+def load_env(*search_dirs):
+    """Load .env.local from any of the given directories or the project root."""
+    for d in list(search_dirs) + [PROJECT_DIR]:
+        env_path = Path(d) / ".env.local"
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, val = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), val.strip())
+
+
 def load_api_key():
-    env_path = PROJECT_DIR / ".env.local"
-    if env_path.exists():
-        for line in env_path.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, val = line.split("=", 1)
-                os.environ.setdefault(key.strip(), val.strip())
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
         print("ERROR: Set OPENROUTER_API_KEY in .env.local or environment", flush=True)
         sys.exit(1)
     return api_key
 
-SYSTEM_PROMPT = """You are an expert ecology instructor creating multiple-choice exam questions
-from a textbook on Manitoba's terrestrial ecozones, ecoregions, and ecodistricts.
+SYSTEM_PROMPT = """You are an expert instructor creating multiple-choice exam questions
+from reference material.
 
-You will receive images of pages from the textbook. Generate questions at three difficulty levels:
+You will receive images of pages from the source material. Generate questions at three difficulty levels:
 
 ## EASY (5 questions)
 - Direct recall of facts, definitions, or identifications from the pages
@@ -290,6 +294,7 @@ def parse_args():
     """Parse command-line arguments."""
     import argparse
     parser = argparse.ArgumentParser(description="Generate easy/medium MC questions from PDF")
+    parser.add_argument("--exam-dir", type=str, required=True, help="Path to exam directory")
     parser.add_argument("--start", type=int, default=1, help="Start page (default: 1)")
     parser.add_argument("--end", type=int, default=None, help="End page (default: last page)")
     parser.add_argument("--pages", type=str, default=None, help="Page range, e.g. '1-50'")
@@ -300,11 +305,22 @@ def parse_args():
 
 
 def main():
+    global PDF_PATH, OUTPUT_DIR, DPI
+
     args = parse_args()
-    global DPI
     DPI = args.dpi
     chunk_size = args.chunk_size
 
+    exam_dir = Path(args.exam_dir).resolve()
+    PDF_PATH = exam_dir / "reference.pdf"
+    OUTPUT_DIR = exam_dir / "generated_questions"
+    OUTPUT_DIR.mkdir(exist_ok=True)
+
+    if not PDF_PATH.exists():
+        print(f"ERROR: PDF not found at {PDF_PATH}", flush=True)
+        sys.exit(1)
+
+    load_env(exam_dir)
     api_key = load_api_key()
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",

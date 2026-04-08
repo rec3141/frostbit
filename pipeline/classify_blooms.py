@@ -15,12 +15,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from openai import OpenAI
 
-PROJECT_DIR = Path(__file__).parent
-EXAM_PATH = PROJECT_DIR / "exam_bank_calibrated.json"
-if not EXAM_PATH.exists():
-    EXAM_PATH = PROJECT_DIR / "exam_bank_full.json"
-OUTPUT_PATH = EXAM_PATH  # overwrite in place
-CHECKPOINT_PATH = PROJECT_DIR / "blooms_checkpoint.json"
+PROJECT_DIR = Path(__file__).parent.parent
+EXAM_PATH = None
+OUTPUT_PATH = None
+CHECKPOINT_PATH = None
 
 HAIKU_MODEL = "anthropic/claude-haiku-4.5"
 BATCH_SIZE = 15
@@ -50,14 +48,19 @@ Return strict JSON:
 Return ONLY the JSON object. No commentary."""
 
 
-def load_api_key():
-    env_path = PROJECT_DIR / ".env.local"
-    if env_path.exists():
-        for line in env_path.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip())
+def load_env(*search_dirs):
+    for d in list(search_dirs) + [PROJECT_DIR]:
+        env_path = Path(d) / ".env.local"
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, val = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), val.strip())
+
+
+def load_api_key(*search_dirs):
+    load_env(*search_dirs)
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
         print("ERROR: Set OPENROUTER_API_KEY", flush=True)
@@ -106,12 +109,21 @@ def parse_blooms(text, n):
 
 
 def main():
+    global EXAM_PATH, OUTPUT_PATH, CHECKPOINT_PATH
+
     import argparse
     parser = argparse.ArgumentParser()
+    parser.add_argument("--exam-dir", type=Path, required=True,
+                        help="Path to exam directory")
     parser.add_argument("--workers", type=int, default=3)
     args = parser.parse_args()
 
-    api_key = load_api_key()
+    exam_dir = args.exam_dir.resolve()
+    EXAM_PATH = exam_dir / "bank.json"
+    OUTPUT_PATH = exam_dir / "bank.json"
+    CHECKPOINT_PATH = exam_dir / "blooms_checkpoint.json"
+
+    api_key = load_api_key(exam_dir)
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
 
     with open(EXAM_PATH) as f:

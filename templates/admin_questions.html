@@ -92,90 +92,118 @@
         </div>
     </div>
 
-    <!-- Question detail panel -->
-    <div class="card" id="q-detail" style="display:none">
-        <div class="q-detail-header">
-            <h3>Question <span id="qd-id"></span></h3>
-            <button class="btn btn-secondary btn-sm" onclick="closeDetail()">Close</button>
-        </div>
-        <div class="q-detail-body">
-            <div class="form-group">
-                <label>Question Text</label>
-                <textarea id="qd-question" rows="3" style="width:100%"></textarea>
-            </div>
-            <div class="q-choices-grid">
-                <div class="form-group"><label>A</label><input id="qd-A" type="text"></div>
-                <div class="form-group"><label>B</label><input id="qd-B" type="text"></div>
-                <div class="form-group"><label>C</label><input id="qd-C" type="text"></div>
-                <div class="form-group"><label>D</label><input id="qd-D" type="text"></div>
-                <div class="form-group"><label>E</label><input id="qd-E" type="text"></div>
-            </div>
-            <div class="q-detail-meta">
-                <span>Answer: <strong id="qd-answer"></strong></span>
-                <span>Tier: <strong id="qd-tier"></strong></span>
-                <span>Bloom's: <strong id="qd-blooms"></strong></span>
-            </div>
-            <button class="btn btn-primary btn-sm" onclick="saveQuestion()">Save Changes</button>
-            <span id="qd-status" style="margin-left:1rem;font-size:0.85rem;color:var(--text-muted)"></span>
-        </div>
-    </div>
-
     <script>
-    // Full question data from server
     const allQuestions = {{ questions | tojson }};
     const questionsById = {};
     allQuestions.forEach(q => questionsById[q.id] = q);
+    let openEditorRow = null;
 
     function toggleQuestion(id) {
-        const panel = document.getElementById('q-detail');
+        // Close any open editor
+        if (openEditorRow) {
+            openEditorRow.remove();
+            // If clicking the same question, just close
+            if (openEditorRow.dataset.qid == id) {
+                openEditorRow = null;
+                return;
+            }
+            openEditorRow = null;
+        }
+
         const q = questionsById[id];
         if (!q) return;
 
-        document.getElementById('qd-id').textContent = id;
-        document.getElementById('qd-question').value = q.question;
-        document.getElementById('qd-A').value = q.A || '';
-        document.getElementById('qd-B').value = q.B || '';
-        document.getElementById('qd-C').value = q.C || '';
-        document.getElementById('qd-D').value = q.D || '';
-        document.getElementById('qd-E').value = q.E || '';
-        document.getElementById('qd-answer').textContent = q.answer || '?';
-        document.getElementById('qd-tier').textContent = q.difficulty || '?';
-        document.getElementById('qd-blooms').textContent = q.blooms_name || '?';
-        document.getElementById('qd-status').textContent = '';
-        panel.style.display = 'block';
-        panel.scrollIntoView({behavior: 'smooth'});
+        // Find the clicked row
+        const clickedRow = document.querySelector(`.q-row[onclick="toggleQuestion(${id})"]`);
+        if (!clickedRow) return;
+
+        // Create editor row
+        const editorRow = document.createElement('tr');
+        editorRow.dataset.qid = id;
+        editorRow.className = 'q-editor-row';
+        const numCols = clickedRow.cells.length;
+        const td = document.createElement('td');
+        td.colSpan = numCols;
+        td.innerHTML = `
+            <div class="q-editor">
+                <div class="q-editor-header">
+                    <strong>Question ${id}</strong>
+                    <div>
+                        <span class="q-editor-meta">Answer: <strong>${q.answer || '?'}</strong></span>
+                        <span class="q-editor-meta">Tier: <strong>${q.difficulty || '?'}</strong></span>
+                        <span class="q-editor-meta">Bloom's: <strong>${q.blooms_name || '?'}</strong></span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <textarea id="qd-question-${id}" rows="2">${q.question || ''}</textarea>
+                </div>
+                <div class="q-choices-grid">
+                    <div class="form-group"><label>A</label><input id="qd-A-${id}" type="text" value="${(q.A||'').replace(/"/g,'&quot;')}"></div>
+                    <div class="form-group"><label>B</label><input id="qd-B-${id}" type="text" value="${(q.B||'').replace(/"/g,'&quot;')}"></div>
+                    <div class="form-group"><label>C</label><input id="qd-C-${id}" type="text" value="${(q.C||'').replace(/"/g,'&quot;')}"></div>
+                    <div class="form-group"><label>D</label><input id="qd-D-${id}" type="text" value="${(q.D||'').replace(/"/g,'&quot;')}"></div>
+                    <div class="form-group"><label>E</label><input id="qd-E-${id}" type="text" value="${(q.E||'').replace(/"/g,'&quot;')}"></div>
+                </div>
+                <div>
+                    <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); saveQuestion(${id})">Save</button>
+                    <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); closeEditor()">Cancel</button>
+                    <span id="qd-status-${id}" style="margin-left:0.5rem;font-size:0.85rem;color:var(--text-muted)"></span>
+                </div>
+            </div>
+        `;
+        editorRow.appendChild(td);
+
+        // Insert after clicked row
+        clickedRow.parentNode.insertBefore(editorRow, clickedRow.nextSibling);
+        openEditorRow = editorRow;
+
+        // Prevent clicks inside editor from toggling
+        editorRow.addEventListener('click', e => e.stopPropagation());
     }
 
-    function closeDetail() {
-        document.getElementById('q-detail').style.display = 'none';
+    function closeEditor() {
+        if (openEditorRow) {
+            openEditorRow.remove();
+            openEditorRow = null;
+        }
     }
 
-    async function saveQuestion() {
-        const id = parseInt(document.getElementById('qd-id').textContent);
+    async function saveQuestion(id) {
         const data = {
             id: id,
-            question: document.getElementById('qd-question').value,
-            A: document.getElementById('qd-A').value,
-            B: document.getElementById('qd-B').value,
-            C: document.getElementById('qd-C').value,
-            D: document.getElementById('qd-D').value,
-            E: document.getElementById('qd-E').value,
+            exam_id: '{{ exam.id }}',
+            question: document.getElementById(`qd-question-${id}`).value,
+            A: document.getElementById(`qd-A-${id}`).value,
+            B: document.getElementById(`qd-B-${id}`).value,
+            C: document.getElementById(`qd-C-${id}`).value,
+            D: document.getElementById(`qd-D-${id}`).value,
+            E: document.getElementById(`qd-E-${id}`).value,
         };
         const resp = await fetch('/admin/api/question/edit', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({exam_id: '{{ exam.id }}', ...data}),
+            body: JSON.stringify(data),
         });
         const result = await resp.json();
-        document.getElementById('qd-status').textContent = result.ok ? 'Saved' : 'Error: ' + result.error;
+        const status = document.getElementById(`qd-status-${id}`);
         if (result.ok) {
+            status.textContent = 'Saved';
+            status.style.color = 'var(--correct-border)';
             questionsById[id].question = data.question;
+            questionsById[id].A = data.A;
+            questionsById[id].B = data.B;
+            questionsById[id].C = data.C;
+            questionsById[id].D = data.D;
+            questionsById[id].E = data.E;
             // Update table cell
             document.querySelectorAll('.q-row').forEach(row => {
                 if (row.cells[0].textContent.trim() == id) {
                     row.cells[1].textContent = data.question.substring(0, 50) + (data.question.length > 50 ? '...' : '');
                 }
             });
+        } else {
+            status.textContent = 'Error: ' + result.error;
+            status.style.color = 'var(--incorrect-border)';
         }
     }
 
