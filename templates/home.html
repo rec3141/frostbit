@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frostbit — Adaptive Testing</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="card start-card">
+            <h1>Frostbit</h1>
+            <p class="subtitle">Adaptive Testing Platform</p>
+
+            {% if exams %}
+            <div class="exam-list">
+                {% for exam in exams %}
+                <a href="/exam/{{ exam.id }}" class="exam-card-link">
+                    <div class="exam-card-item">
+                        <h3>{{ exam.title }}</h3>
+                        <p>{{ exam.subtitle }}</p>
+                        <span class="exam-item-count">{{ exam.items|length }} questions</span>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="subtitle">No exams available yet.</p>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

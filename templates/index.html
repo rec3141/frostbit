@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ exam.title }}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="card start-card">
+            <h1>{{ exam.title }}</h1>
+            <h2>{{ exam.subtitle }}</h2>
+            <p class="subtitle">{{ exam.description }}</p>
+
+            <form action="/exam/{{ exam.id }}/start" method="POST" class="start-form">
+                <div class="form-group">
+                    <label for="student_name">Full Name</label>
+                    <input type="text" id="student_name" name="student_name" required
+                           placeholder="Jane Smith" autocomplete="name">
+                </div>
+                <div class="form-group">
+                    <label for="student_id">Student ID</label>
+                    <input type="text" id="student_id" name="student_id" required
+                           placeholder="7654321" autocomplete="off">
+                </div>
+                <button type="submit" class="btn btn-primary">Begin Exam</button>
+            </form>
+
+            <div class="divider"><span>or</span></div>
+
+            <form action="/exam/{{ exam.id }}/continue" method="POST" class="start-form">
+                <div class="form-group">
+                    <label for="continue_id">Continue a previous exam</label>
+                    <input type="text" id="continue_id" name="student_id"
+                           placeholder="Student ID" autocomplete="off">
+                </div>
+                <button type="submit" class="btn btn-secondary">Continue</button>
+            </form>
+
+            <div style="margin-top:2rem;text-align:center">
+                <a href="/" style="color:#9ca3af;font-size:0.8rem;text-decoration:none">All Exams</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

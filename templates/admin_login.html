@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instructor Login — ENVR3140</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="card start-card">
+            <h1>Instructor Access</h1>
+            <form action="/admin/login" method="POST" class="start-form">
+                {% if error %}
+                <div class="error-msg">{{ error }}</div>
+                {% endif %}
+                <div class="form-group">
+                    <label for="token">Access Token</label>
+                    <input type="password" id="token" name="token" required
+                           placeholder="Enter instructor token" autocomplete="off">
+                </div>
+                <button type="submit" class="btn btn-primary">Login</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

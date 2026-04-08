@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ENVR3140 Instructor Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="admin-container">
+        <div class="admin-header">
+            <h1>ENVR3140 Instructor Dashboard</h1>
+            <div class="admin-nav">
+                <a href="/admin" class="nav-link active">Students</a>
+                <a href="/admin/questions" class="nav-link">Questions</a>
+                <a href="/admin/export" class="nav-link">Export CSV</a>
+                <a href="/admin/logout" class="nav-link">Logout</a>
+            </div>
+        </div>
+
+        <!-- Stats cards -->
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="stat-number">{{ stats.total_sessions }}</div>
+                <div class="stat-desc">Total Sessions</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ stats.finished }}</div>
+                <div class="stat-desc">Completed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ stats.in_progress }}</div>
+                <div class="stat-desc">In Progress</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ stats.avg_questions or '-' }}</div>
+                <div class="stat-desc">Avg Questions</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ '%s%%'|format(stats.avg_accuracy) if stats.avg_accuracy else '-' }}</div>
+                <div class="stat-desc">Avg Accuracy</div>
+            </div>
+        </div>
+
+        <!-- Charts row -->
+        <div class="charts-row">
+            <div class="card chart-card">
+                <h3>Item Bank: Difficulty Tiers</h3>
+                <div class="bar-chart" id="tier-chart">
+                    {% for tier in ['easy', 'medium', 'hard'] %}
+                    {% set count = tiers.get(tier, 0) %}
+                    {% set pct = (count / 1154 * 100)|round(1) %}
+                    <div class="bar-row">
+                        <span class="bar-label">{{ tier }}</span>
+                        <div class="bar-bg"><div class="bar-fill bar-{{ tier }}" style="width:{{ pct }}%"></div></div>
+                        <span class="bar-value">{{ count }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="card chart-card">
+                <h3>Item Bank: Bloom's Taxonomy</h3>
+                <div class="bar-chart" id="blooms-chart">
+                    {% for level in ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'] %}
+                    {% set count = blooms.get(level, 0) %}
+                    {% set pct = (count / 1154 * 100)|round(1) %}
+                    <div class="bar-row">
+                        <span class="bar-label">{{ level }}</span>
+                        <div class="bar-bg"><div class="bar-fill bar-blooms" style="width:{{ pct }}%"></div></div>
+                        <span class="bar-value">{{ count }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Student table -->
+        <div class="card">
+            <div class="table-header">
+                <h3>Student Sessions</h3>
+                {% if show_archived %}
+                <a href="/admin" class="btn btn-secondary btn-sm">Hide Archived</a>
+                {% else %}
+                <a href="/admin?show_archived=1" class="btn btn-secondary btn-sm">Show Archived</a>
+                {% endif %}
+            </div>
+            <table class="admin-table sortable">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="select-all" onclick="toggleAll(this)"></th>
+                        <th onclick="sortTable(1)">Student</th>
+                        <th onclick="sortTable(1)">ID</th>
+                        <th onclick="sortTable(2)">Started</th>
+                        <th onclick="sortTable(3)">Questions</th>
+                        <th onclick="sortTable(4)">Correct</th>
+                        <th onclick="sortTable(5)">Accuracy</th>
+                        <th onclick="sortTable(6)">Theta</th>
+                        <th onclick="sortTable(7)">Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in sessions %}
+                    <tr>
+                        <td><input type="checkbox" class="session-cb" data-id="{{ s.id }}" onchange="updateCompare()"></td>
+                        <td><a href="/admin/session/{{ s.id }}">{{ s.student_name }}</a></td>
+                        <td>{{ s.student_id }}</td>
+                        <td>{{ s.started_at[:16] if s.started_at else '-' }}</td>
+                        <td>{{ s.total_questions or '-' }}</td>
+                        <td>{{ s.correct or '-' }}</td>
+                        <td>{{ '%.0f%%'|format(s.correct / s.total_questions * 100) if s.total_questions else '-' }}</td>
+                        <td>{{ '%.2f'|format(s.theta) if s.theta else '-' }}</td>
+                        <td><span class="status-badge {{ 'status-done' if s.finished_at else 'status-active' }}">
+                            {{ 'Done' if s.finished_at else 'Active' }}
+                        </span></td>
+                        <td>
+                            {% if s.archived %}
+                            <form action="/admin/session/{{ s.id }}/unarchive" method="POST" style="display:inline">
+                                <button type="submit" class="btn-icon" title="Unarchive">restore</button>
+                            </form>
+                            {% else %}
+                            <form action="/admin/session/{{ s.id }}/archive" method="POST" style="display:inline">
+                                <button type="submit" class="btn-icon" title="Archive">archive</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Comparative theta chart -->
+        <div class="card" id="compare-card" style="display:none">
+            <h3>Comparative Theta Trajectories</h3>
+            <canvas id="compare-chart" style="width:100%;height:300px"></canvas>
+            <div id="compare-legend" class="compare-legend"></div>
+        </div>
+    </div>
+
+    <script>
+    const COLORS = [
+        '#2563eb', '#dc2626', '#16a34a', '#9333ea', '#ea580c',
+        '#0891b2', '#be185d', '#4f46e5', '#65a30d', '#b45309',
+        '#6366f1', '#e11d48', '#059669', '#7c3aed', '#d97706',
+    ];
+    let trajectoryCache = {};
+
+    function toggleAll(master) {
+        document.querySelectorAll('.session-cb').forEach(cb => {
+            cb.checked = master.checked;
+        });
+        updateCompare();
+    }
+
+    async function updateCompare() {
+        const checked = Array.from(document.querySelectorAll('.session-cb:checked'));
+        const card = document.getElementById('compare-card');
+
+        if (checked.length === 0) {
+            card.style.display = 'none';
+            return;
+        }
+        card.style.display = 'block';
+
+        // Fetch trajectories
+        const trajectories = [];
+        for (const cb of checked) {
+            const sid = cb.dataset.id;
+            if (!trajectoryCache[sid]) {
+                const resp = await fetch(`/admin/api/session/${sid}/trajectory`);
+                trajectoryCache[sid] = await resp.json();
+            }
+            trajectories.push(trajectoryCache[sid]);
+        }
+
+        drawCompareChart(trajectories);
+    }
+
+    function drawCompareChart(trajectories) {
+        const canvas = document.getElementById('compare-chart');
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        ctx.scale(dpr, dpr);
+        const W = rect.width, H = rect.height;
+        const pad = {top: 15, right: 20, bottom: 30, left: 45};
+        const plotW = W - pad.left - pad.right;
+        const plotH = H - pad.top - pad.bottom;
+
+        ctx.clearRect(0, 0, W, H);
+
+        // Find ranges
+        let maxQ = 10;
+        let allThetas = [];
+        trajectories.forEach(t => {
+            maxQ = Math.max(maxQ, t.points.length + 2);
+            t.points.forEach(p => { if (p.theta !== null) allThetas.push(p.theta); });
+        });
+        const minT = (allThetas.length ? Math.min(...allThetas) : -2) - 0.3;
+        const maxT = (allThetas.length ? Math.max(...allThetas) : 2) + 0.3;
+
+        function x(q) { return pad.left + (q / (maxQ - 1)) * plotW; }
+        function y(t) { return pad.top + plotH - ((t - minT) / (maxT - minT)) * plotH; }
+
+        // Zero line
+        if (minT < 0 && maxT > 0) {
+            ctx.strokeStyle = '#e5e7eb';
+            ctx.setLineDash([4, 3]);
+            ctx.beginPath(); ctx.moveTo(pad.left, y(0)); ctx.lineTo(W - pad.right, y(0)); ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // Draw each trajectory
+        trajectories.forEach((t, ti) => {
+            const color = COLORS[ti % COLORS.length];
+            const pts = t.points.filter(p => p.theta !== null);
+            if (pts.length < 1) return;
+
+            // Line
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            pts.forEach((p, i) => {
+                const px = x(i), py = y(p.theta);
+                i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+            });
+            ctx.stroke();
+
+            // Points
+            pts.forEach((p, i) => {
+                const px = x(i), py = y(p.theta);
+                ctx.fillStyle = '#fff';
+                ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = color;
+                ctx.beginPath(); ctx.arc(px, py, 2.5, 0, Math.PI * 2); ctx.fill();
+            });
+        });
+
+        // Y ticks
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = '10px system-ui';
+        ctx.textAlign = 'right';
+        for (let t = Math.ceil(minT); t <= Math.floor(maxT); t++) {
+            ctx.fillText(t, pad.left - 5, y(t) + 3);
+        }
+
+        // X label
+        ctx.textAlign = 'center';
+        ctx.fillText('Question', W / 2, H - 4);
+        const step = maxQ <= 15 ? 1 : maxQ <= 30 ? 5 : 10;
+        for (let q = 0; q < maxQ; q += step) {
+            if (q === 0) continue;
+            ctx.fillText(q, x(q), H - pad.bottom + 14);
+        }
+
+        // Legend
+        const legend = document.getElementById('compare-legend');
+        legend.innerHTML = '';
+        trajectories.forEach((t, ti) => {
+            const color = COLORS[ti % COLORS.length];
+            const finalTheta = t.points.length ? t.points[t.points.length - 1].theta : null;
+            const label = `${t.name} (${t.points.length}Q, θ=${finalTheta !== null ? finalTheta.toFixed(2) : '?'})`;
+            legend.innerHTML += `<span class="legend-item"><span class="legend-dot" style="background:${color}"></span>${label}</span>`;
+        });
+    }
+
+    let sortDir = 1;
+    let lastCol = -1;
+    function sortTable(col) {
+        const table = document.querySelector('.admin-table tbody');
+        const rows = Array.from(table.rows);
+        if (col === lastCol) sortDir *= -1;
+        else sortDir = 1;
+        lastCol = col;
+        rows.sort((a, b) => {
+            let va = a.cells[col].textContent.trim();
+            let vb = b.cells[col].textContent.trim();
+            // Try numeric
+            const na = parseFloat(va.replace('%', ''));
+            const nb = parseFloat(vb.replace('%', ''));
+            if (!isNaN(na) && !isNaN(nb)) return (na - nb) * sortDir;
+            return va.localeCompare(vb) * sortDir;
+        });
+        rows.forEach(r => table.appendChild(r));
+    }
+    </script>
+</body>
+</html>

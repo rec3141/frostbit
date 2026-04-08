@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Build New Exam — Frostbit</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="admin-container">
+        <div class="admin-header">
+            <h1>Build New Exam</h1>
+            <div class="admin-nav">
+                <a href="/admin" class="nav-link">Back</a>
+            </div>
+        </div>
+
+        <div class="card">
+            <form action="/admin/build" method="POST" enctype="multipart/form-data" class="build-form">
+                {% if error %}
+                <div class="error-msg">{{ error }}</div>
+                {% endif %}
+                {% if success %}
+                <div class="success-msg">{{ success }}</div>
+                {% endif %}
+
+                <div class="form-group">
+                    <label for="exam_id">Exam ID</label>
+                    <input type="text" id="exam_id" name="exam_id" required
+                           placeholder="bio101-midterm" pattern="[a-z0-9_-]+"
+                           title="Lowercase letters, numbers, hyphens, underscores only">
+                    <small class="form-hint">URL-safe identifier (e.g. bio101-midterm)</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="title">Exam Title</label>
+                    <input type="text" id="title" name="title" required
+                           placeholder="BIO101 Introduction to Biology">
+                </div>
+
+                <div class="form-group">
+                    <label for="subtitle">Subtitle</label>
+                    <input type="text" id="subtitle" name="subtitle"
+                           placeholder="Midterm Exam" value="Adaptive Exam">
+                </div>
+
+                <div class="form-group">
+                    <label for="description">Description</label>
+                    <textarea id="description" name="description" rows="3"
+                              placeholder="Open-book adaptive exam covering chapters 1-5..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="pdf">Source PDF</label>
+                    <input type="file" id="pdf" name="pdf" accept=".pdf" required>
+                    <small class="form-hint">The textbook or reference material to generate questions from</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="pdf_offset">PDF Page Offset</label>
+                    <input type="number" id="pdf_offset" name="pdf_offset" value="0"
+                           min="-20" max="20">
+                    <small class="form-hint">Difference between PDF page numbers and printed page numbers (usually 0-7)</small>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" name="auto_build" checked>
+                            Auto-build questions after upload
+                        </label>
+                        <small class="form-hint">Generates questions, validates, calibrates — takes ~1 hour</small>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary">Create Exam</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

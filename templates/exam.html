@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ENVR3140 Exam</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="exam-body">
+    <div class="exam-layout">
+        <!-- Left: Question panel -->
+        <div class="question-panel">
+            <div class="exam-header">
+                <span class="student-name">{{ student_name }}</span>
+                <span class="progress" id="progress">Question 1</span>
+                <button class="btn btn-finish" id="finish-btn" onclick="finishExam()">Finished</button>
+            </div>
+
+            <div class="card exam-card" id="question-card">
+                <div class="question-text" id="question-text">Loading...</div>
+                <div class="choices" id="choices"></div>
+                <div class="feedback" id="feedback"></div>
+                <button class="btn btn-primary" id="next-btn" style="display:none">Next Question</button>
+            </div>
+
+            <div class="card" id="loading-card" style="display:none">
+                <div class="loading">Loading next question...</div>
+            </div>
+
+            <div class="card skill-chart-card">
+                <div class="skill-chart-header">
+                    <span class="skill-chart-title">Challenge Level</span>
+                </div>
+                <canvas id="skill-chart" width="700" height="160"></canvas>
+            </div>
+
+            <div class="keyboard-hint">
+                <kbd>A</kbd>-<kbd>E</kbd> to answer &middot; <kbd>Enter</kbd> for next
+            </div>
+        </div>
+
+        <!-- Resize handle -->
+        <div class="resize-handle" id="resize-handle"></div>
+
+        <!-- Right: PDF viewer -->
+        <div class="pdf-panel" id="pdf-panel">
+            <div class="pdf-header">
+                <span>Reference Material</span>
+            </div>
+            <iframe id="pdf-viewer" src="/static/pdfviewer.html" style="width:100%;border:none;flex:1;background:#525659"></iframe>
+        </div>
+    </div>
+
+    <script>
+    const state = {
+        currentItem: null,
+        answered: false,
+        questionNumber: 0,
+        thetaHistory: [],
+        startTime: Date.now(),
+    };
+
+    // Tell PDF viewer which exam PDF to load
+    const pdfViewer = document.getElementById("pdf-viewer");
+    pdfViewer.addEventListener("load", () => {
+        pdfViewer.contentWindow.postMessage({type: "loadPdf", url: "/exam/{{ exam.id }}/pdf"}, "*");
+    });
+
+    let pdfTargetPage = null;
+
+    window.addEventListener("message", (e) => {
+        if (e.data && e.data.type === "pageRendered") {
+            pdfTargetPage = null; // ack received, stop retrying
+        }
+    });
+
+    function navigatePdf(page) {
+        if (!page) return;
+        pdfTargetPage = page;
+        const viewer = document.getElementById("pdf-viewer");
+        let attempts = 0;
+        function tryNav() {
+            if (pdfTargetPage !== page) return; // already ack'd or new page requested
+            try {
+                viewer.contentWindow.postMessage({type: "goToPage", page: page}, "*");
+            } catch(e) {}
+            if (attempts++ < 15) setTimeout(tryNav, 300);
+        }
+        tryNav();
+    }
+
+    async function loadNextQuestion() {
+        state.answered = false;
+        document.getElementById("feedback").innerHTML = "";
+        document.getElementById("feedback").className = "feedback";
+        document.getElementById("next-btn").style.display = "none";
+        document.getElementById("question-card").style.display = "none";
+        document.getElementById("loading-card").style.display = "block";
+
+        const resp = await fetch("/api/next");
+        const data = await resp.json();
+
+        document.getElementById("loading-card").style.display = "none";
+
+        if (data.error) {
+            // Session lost (e.g. server restart) — redirect to start
+            window.location.href = "/";
+            return;
+        }
+
+        if (data.done) {
+            window.location.href = "/exam/{{ exam.id }}/results";
+            return;
+        }
+
+        state.currentItem = data;
+        state.questionNumber = data.question_number;
+
+        // Guard against malformed response
+        if (!data.question || !data.choices) {
+            console.warn("Skipping malformed question:", data);
+            loadNextQuestion();
+            return;
+        }
+
+        document.getElementById("progress").textContent = `Question ${data.question_number}`;
+        document.getElementById("question-text").textContent = data.question;
+
+        // Navigate PDF to source page
+        if (data.pdf_page) {
+            navigatePdf(data.pdf_page);
+        }
+
+        const choicesDiv = document.getElementById("choices");
+        choicesDiv.innerHTML = "";
+        for (const [letter, text] of Object.entries(data.choices)) {
+            const btn = document.createElement("button");
+            btn.className = "choice-btn";
+            btn.dataset.letter = letter;
+            btn.innerHTML = `<span class="choice-letter">${letter}</span> ${text}`;
+            btn.addEventListener("click", () => submitAnswer(letter));
+            choicesDiv.appendChild(btn);
+        }
+
+        // Debug: highlight correct answer and show item info
+        document.querySelectorAll(".choice-btn").forEach(btn => {
+            if (btn.dataset.letter === data.answer) {
+                btn.style.outline = "2px dashed #16a34a";
+            }
+        });
+        document.getElementById("progress").textContent =
+            `Q${data.question_number}  [#${data.item_id} ${data.tier} diff=${data.difficulty} pdf=${data.pdf_page}]`;
+
+        document.getElementById("question-card").style.display = "block";
+        updateTheta(data.theta);
+    }
+
+    async function submitAnswer(chosen) {
+        if (state.answered) return;
+        state.answered = true;
+
+        document.querySelectorAll(".choice-btn").forEach(btn => {
+            btn.disabled = true;
+        });
+
+        const resp = await fetch("/api/answer", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                item_id: state.currentItem.item_id,
+                chosen: chosen,
+                elapsed: (Date.now() - state.startTime) / 1000,
+            }),
+        });
+        const data = await resp.json();
+
+        document.querySelectorAll(".choice-btn").forEach(btn => {
+            if (btn.dataset.letter === data.correct_answer) {
+                btn.classList.add("correct");
+            }
+            if (btn.dataset.letter === chosen && !data.correct) {
+                btn.classList.add("incorrect");
+            }
+        });
+
+        const feedback = document.getElementById("feedback");
+        if (data.correct) {
+            feedback.textContent = "Correct!";
+            feedback.className = "feedback feedback-correct";
+        } else {
+            feedback.textContent = `Incorrect. The answer is ${data.correct_answer}.`;
+            feedback.className = "feedback feedback-incorrect";
+        }
+
+        updateTheta(data.theta, data.correct, data.blooms_level);
+
+        if (data.done) {
+            document.getElementById("next-btn").textContent = "View Results";
+            document.getElementById("next-btn").onclick = () => window.location.href = "/exam/{{ exam.id }}/results";
+        } else {
+            document.getElementById("next-btn").onclick = loadNextQuestion;
+        }
+        document.getElementById("next-btn").style.display = "block";
+    }
+
+    function thetaToSkill(theta) {
+        // Linear map: theta [-3, 3] -> skill [1, 5]
+        // Clamp to range
+        const clamped = Math.min(3, Math.max(-3, theta));
+        return 1 + (clamped + 3) * (4 / 6);
+    }
+
+    const BLOOMS_COLORS = {
+        0: '#9ca3af',  // unclassified
+        1: '#4ade80',  // Remember — green
+        2: '#60a5fa',  // Understand — blue
+        3: '#f59e0b',  // Apply — amber
+        4: '#a78bfa',  // Analyze — purple
+        5: '#f43f5e',  // Evaluate — rose
+        6: '#14b8a6',  // Create — teal
+    };
+    const BLOOMS_NAMES = {
+        0: '?', 1: 'Remember', 2: 'Understand', 3: 'Apply',
+        4: 'Analyze', 5: 'Evaluate', 6: 'Create',
+    };
+
+    function updateTheta(theta, correct, bloomsLevel) {
+        if (theta === undefined || theta === null) theta = 0;
+        const skill = thetaToSkill(theta);
+        if (correct !== undefined) {
+            state.thetaHistory.push({
+                question: state.thetaHistory.length + 1,
+                skill: skill,
+                correct: correct,
+                blooms: bloomsLevel || 0,
+                elapsed: (Date.now() - state.startTime) / 1000,
+            });
+        }
+        drawSkillChart();
+    }
+
+    function drawSkillChart() {
+        const canvas = document.getElementById("skill-chart");
+        const ctx = canvas.getContext("2d");
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        ctx.scale(dpr, dpr);
+        const W = rect.width;
+        const H = rect.height;
+
+        const pad = {top: 15, right: 20, bottom: 30, left: 15};
+        const plotW = W - pad.left - pad.right;
+        const plotH = H - pad.top - pad.bottom;
+
+        ctx.clearRect(0, 0, W, H);
+
+        const history = state.thetaHistory;
+        if (history.length === 0) {
+            ctx.fillStyle = "#9ca3af";
+            ctx.font = "14px system-ui";
+            ctx.textAlign = "center";
+            ctx.fillText("Answer questions to see your challenge level", W / 2, H / 2);
+            return;
+        }
+
+        const maxTime = history[history.length - 1].elapsed * 1.1 || 60;
+        const maxQ = Math.max(10, history.length + 2);  // keep for confidence band indexing
+        const skills = history.map(h => h.skill);
+        const dataMin = Math.min(...skills);
+        const dataMax = Math.max(...skills);
+        const margin = Math.max(0.3, (dataMax - dataMin) * 0.15);
+        const minT = dataMin - margin;
+        const maxT = dataMax + margin;
+
+        function x(t) { return pad.left + (t / maxTime) * plotW; }
+        function y(t) { return pad.top + plotH - ((t - minT) / (maxT - minT)) * plotH; }
+
+
+        // Line
+        ctx.strokeStyle = "#2563eb";
+        ctx.lineWidth = 2.5;
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        for (let i = 0; i < history.length; i++) {
+            const px = x(history[i].elapsed);
+            const py = y(history[i].skill);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+
+        // Points — colored by Bloom's taxonomy
+        for (let i = 0; i < history.length; i++) {
+            const px = x(history[i].elapsed);
+            const py = y(history[i].skill);
+            const bl = history[i].blooms || 0;
+            ctx.fillStyle = BLOOMS_COLORS[bl] || BLOOMS_COLORS[0];
+            ctx.beginPath();
+            ctx.arc(px, py, 4, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // X axis — time labels
+        ctx.fillStyle = "#9ca3af";
+        ctx.font = "10px system-ui";
+        ctx.textAlign = "center";
+        // Pick sensible time intervals
+        const totalSec = maxTime;
+        let interval;
+        if (totalSec <= 120) interval = 30;
+        else if (totalSec <= 600) interval = 60;
+        else if (totalSec <= 1800) interval = 300;
+        else interval = 600;
+        for (let t = interval; t < maxTime; t += interval) {
+            const mins = Math.floor(t / 60);
+            const secs = Math.floor(t % 60);
+            const label = mins > 0 ? (secs > 0 ? `${mins}m${secs.toString().padStart(2,'0')}s` : `${mins}m`) : `${secs}s`;
+            ctx.fillText(label, x(t), H - pad.bottom + 14);
+        }
+
+
+        // Legend — Bloom's taxonomy
+        const usedBlooms = [...new Set(history.map(h => h.blooms || 0))].sort();
+        const legY = pad.top + 3;
+        ctx.font = "9px system-ui";
+        ctx.textAlign = "left";
+        let legX = W - pad.right - usedBlooms.length * 65;
+        for (const bl of usedBlooms) {
+            ctx.fillStyle = BLOOMS_COLORS[bl];
+            ctx.beginPath(); ctx.arc(legX, legY, 3.5, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = "#666";
+            ctx.fillText(BLOOMS_NAMES[bl], legX + 7, legY + 3);
+            legX += 65;
+        }
+    }
+
+    async function finishExam() {
+        if (state.thetaHistory.length === 0) return;
+        if (!confirm("Are you sure you want to finish the exam?")) return;
+        await fetch("/api/finish", {method: "POST"});
+        window.location.href = "/exam/{{ exam.id }}/results";
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener("keydown", (e) => {
+        const key = e.key.toUpperCase();
+        if (!state.answered && "ABCDE".includes(key)) {
+            e.preventDefault();
+            submitAnswer(key);
+        } else if (state.answered && (e.key === "Enter" || e.key === " ")) {
+            e.preventDefault();
+            const nextBtn = document.getElementById("next-btn");
+            if (nextBtn.style.display !== "none") {
+                nextBtn.click();
+            }
+        }
+    });
+
+    // Resize handle for PDF panel
+    (() => {
+        const handle = document.getElementById("resize-handle");
+        const pdfPanel = document.getElementById("pdf-panel");
+        const questionPanel = document.querySelector(".question-panel");
+        let dragging = false;
+
+        handle.addEventListener("mousedown", (e) => {
+            dragging = true;
+            document.body.style.cursor = "col-resize";
+            document.body.style.userSelect = "none";
+            pdfPanel.style.pointerEvents = "none";
+            e.preventDefault();
+        });
+
+        document.addEventListener("mousemove", (e) => {
+            if (!dragging) return;
+            const layout = document.querySelector(".exam-layout");
+            const layoutRect = layout.getBoundingClientRect();
+            const handleWidth = 6;
+            const mouseX = e.clientX - layoutRect.left;
+            const leftPct = Math.min(80, Math.max(20, (mouseX / layoutRect.width) * 100));
+            const rightPct = 100 - leftPct;
+
+            questionPanel.style.flex = "none";
+            questionPanel.style.width = `calc(${leftPct}% - ${handleWidth / 2}px)`;
+            pdfPanel.style.flex = "none";
+            pdfPanel.style.width = `calc(${rightPct}% - ${handleWidth / 2}px)`;
+        });
+
+        document.addEventListener("mouseup", () => {
+            if (!dragging) return;
+            dragging = false;
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+            pdfPanel.style.pointerEvents = "";
+        });
+    })();
+
+    // Restore history if continuing a session, then load next question
+    async function init() {
+        const resp = await fetch("/api/history");
+        const data = await resp.json();
+        if (data.history && data.history.length > 0) {
+            for (const h of data.history) {
+                state.thetaHistory.push({
+                    question: h.question,
+                    skill: thetaToSkill(h.theta),
+                    correct: h.correct,
+                    blooms: h.blooms_level || 0,
+                    elapsed: h.elapsed,
+                });
+            }
+            // Set startTime so new answers continue from last elapsed
+            const lastElapsed = data.history[data.history.length - 1].elapsed;
+            state.startTime = Date.now() - (lastElapsed * 1000);
+            updateTheta(data.theta);
+        }
+        loadNextQuestion();
+    }
+    init();
+    </script>
+</body>
+</html>

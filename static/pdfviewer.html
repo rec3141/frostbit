@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #525659; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+.toolbar {
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    padding: 6px 12px; background: #3b3b3b; color: #ccc; font: 13px system-ui;
+}
+.toolbar button {
+    background: #555; border: none; color: #eee; padding: 4px 12px;
+    border-radius: 4px; cursor: pointer; font: 13px system-ui;
+}
+.toolbar button:hover { background: #666; }
+.toolbar button:disabled { opacity: 0.3; cursor: default; }
+.toolbar input {
+    width: 50px; text-align: center; background: #444; border: 1px solid #666;
+    color: #eee; border-radius: 4px; padding: 3px; font: 13px system-ui;
+}
+.viewer { flex: 1; overflow: auto; display: flex; justify-content: center; padding: 8px; }
+canvas { box-shadow: 0 2px 8px rgba(0,0,0,0.4); background: #fff; max-width: 100%; height: auto; }
+</style>
+</head>
+<body>
+<div class="toolbar">
+    <button id="prev-btn" onclick="go(-1)">&larr;</button>
+    <input id="page-input" type="number" min="1" value="1" onchange="goTo(this.value)">
+    <span id="page-count">/ --</span>
+    <button id="next-btn" onclick="go(1)">&rarr;</button>
+</div>
+<div class="viewer">
+    <canvas id="canvas"></canvas>
+</div>
+
+<script type="module">
+import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs';
+
+let pdf = null;
+let currentPage = 1;
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let pdfUrl = '/pdf';  // default, overridden by parent message
+
+async function loadPdf(url) {
+    if (url) pdfUrl = url;
+    pdf = await pdfjsLib.getDocument(pdfUrl).promise;
+    document.getElementById('page-count').textContent = `/ ${pdf.numPages}`;
+    document.getElementById('page-input').max = pdf.numPages;
+    // Don't render anything — wait for parent to tell us which page
+}
+
+async function renderPage(num) {
+    if (!pdf || num < 1 || num > pdf.numPages) return;
+    currentPage = num;
+
+    const page = await pdf.getPage(num);
+    // Scale to fit viewer width
+    const viewer = document.querySelector('.viewer');
+    const baseViewport = page.getViewport({scale: 1});
+    const scale = Math.min(
+        (viewer.clientWidth - 16) / baseViewport.width,
+        (viewer.clientHeight - 16) / baseViewport.height,
+        2.0
+    );
+    const viewport = page.getViewport({scale});
+
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({canvasContext: ctx, viewport}).promise;
+
+    document.getElementById('page-input').value = num;
+    document.getElementById('prev-btn').disabled = (num <= 1);
+    document.getElementById('next-btn').disabled = (num >= pdf.numPages);
+
+    // Ack to parent
+    window.parent.postMessage({type: "pageRendered", page: num}, "*");
+}
+
+window.go = function(delta) { renderPage(currentPage + delta); };
+window.goTo = function(num) { renderPage(parseInt(num) || 1); };
+
+// Keyboard nav
+document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === 'ArrowLeft') go(-1);
+    if (e.key === 'ArrowRight') go(1);
+});
+
+// Listen for page navigation from parent
+let queuedPage = null;
+let pendingUrl = null;
+
+window.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'goToPage') {
+        if (pdf) {
+            renderPage(e.data.page);
+        } else {
+            queuedPage = e.data.page;
+        }
+    } else if (e.data && e.data.type === 'loadPdf') {
+        // Parent tells us which PDF to load
+        if (!pdf) {
+            pendingUrl = e.data.url;
+        }
+    }
+});
+
+// Wait briefly for parent to send PDF URL, then load
+setTimeout(() => {
+    loadPdf(pendingUrl).then(() => {
+        if (queuedPage) {
+            renderPage(queuedPage);
+            queuedPage = null;
+        }
+        window.parent.postMessage({type: "pdfReady"}, "*");
+    });
+}, 200);
+</script>
+</body>
+</html>

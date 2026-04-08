@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frostbit Admin</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="admin-container">
+        <div class="admin-header">
+            <h1>Frostbit Admin</h1>
+            <div class="admin-nav">
+                <a href="/admin/build" class="nav-link">Build New Exam</a>
+                <a href="/admin/logout" class="nav-link">Logout</a>
+            </div>
+        </div>
+
+        <div class="exam-list">
+            {% for exam in exams %}
+            <a href="/admin?exam_id={{ exam.id }}" class="exam-card-link">
+                <div class="exam-card-item">
+                    <h3>{{ exam.title }}</h3>
+                    <p>{{ exam.subtitle }}</p>
+                    <span class="exam-item-count">{{ exam.items|length }} questions</span>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+
+        {% if not exams %}
+        <div class="card" style="text-align:center;padding:3rem">
+            <p style="color:#6b7280;margin-bottom:1rem">No exams yet.</p>
+            <a href="/admin/build" class="btn btn-primary">Build Your First Exam</a>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>

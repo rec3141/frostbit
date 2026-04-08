@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Question Analytics — ENVR3140</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="admin-container">
+        <div class="admin-header">
+            <h1>Question Analytics</h1>
+            <div class="admin-nav">
+                <a href="/admin" class="nav-link">Students</a>
+                <a href="/admin/questions" class="nav-link active">Questions</a>
+                <a href="/admin/export" class="nav-link">Export CSV</a>
+                <a href="/admin/logout" class="nav-link">Logout</a>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="card filter-card">
+            <div class="filter-row">
+                <label>Tier:
+                    <select id="filter-tier" onchange="applyFilters()">
+                        <option value="">All</option>
+                        <option value="easy">Easy</option>
+                        <option value="medium">Medium</option>
+                        <option value="hard">Hard</option>
+                    </select>
+                </label>
+                <label>Bloom's:
+                    <select id="filter-blooms" onchange="applyFilters()">
+                        <option value="">All</option>
+                        <option value="1">1. Remember</option>
+                        <option value="2">2. Understand</option>
+                        <option value="3">3. Apply</option>
+                        <option value="4">4. Analyze</option>
+                        <option value="5">5. Evaluate</option>
+                        <option value="6">6. Create</option>
+                    </select>
+                </label>
+                <label>Flagged:
+                    <select id="filter-flagged" onchange="applyFilters()">
+                        <option value="">All</option>
+                        <option value="yes">Flagged</option>
+                        <option value="no">Clean</option>
+                    </select>
+                </label>
+                <span id="filter-count" class="filter-count"></span>
+            </div>
+        </div>
+
+        <!-- Question table -->
+        <div class="card">
+            <table class="admin-table" id="q-table">
+                <thead>
+                    <tr>
+                        <th onclick="sortQTable(0)">ID</th>
+                        <th onclick="sortQTable(1)">Question</th>
+                        <th onclick="sortQTable(2)">Tier</th>
+                        <th onclick="sortQTable(3)">Bloom's</th>
+                        <th onclick="sortQTable(4)">Diff (H/S)</th>
+                        <th onclick="sortQTable(5)">Ensemble</th>
+                        <th onclick="sortQTable(6)">Model %Wrong</th>
+                        <th onclick="sortQTable(7)">Student Acc</th>
+                        <th onclick="sortQTable(8)">Asked</th>
+                        <th onclick="sortQTable(9)">Flags</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for q in questions %}
+                    <tr data-tier="{{ q.difficulty }}" data-blooms="{{ q.blooms_level or '' }}" data-flagged="{{ 'yes' if q.ensemble_flag_count else 'no' }}">
+                        <td>{{ q.id }}</td>
+                        <td class="question-cell" title="{{ q.question }}">{{ q.question[:50] }}{% if q.question|length > 50 %}...{% endif %}</td>
+                        <td><span class="tier-tag tier-{{ q.difficulty }}">{{ q.difficulty }}</span></td>
+                        <td>{{ '%s. %s'|format(q.blooms_level, q.blooms_name) if q.blooms_level else '-' }}</td>
+                        <td>{{ '%.0f/%.0f'|format(q.haiku_difficulty, q.sonnet_difficulty) if q.haiku_difficulty else '-' }}</td>
+                        <td>{{ q.ensemble_difficulty_rating if q.ensemble_difficulty_rating else '-' }}</td>
+                        <td>{{ '%.0f%%'|format(q.difficulty_score * 100) if q.difficulty_score is not none else '-' }}</td>
+                        <td>{{ '%s%%'|format(q.student_accuracy) if q.student_accuracy is not none else '-' }}</td>
+                        <td>{{ q.times_asked }}</td>
+                        <td>{% if q.ensemble_flags %}
+                            {% for flag, count in q.ensemble_flags.items() %}
+                            <span class="flag-tag flag-{{ flag }}">{{ flag }} ({{ count }})</span>
+                            {% endfor %}
+                            {% else %}-{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+    function applyFilters() {
+        const tier = document.getElementById('filter-tier').value;
+        const blooms = document.getElementById('filter-blooms').value;
+        const flagged = document.getElementById('filter-flagged').value;
+        const rows = document.querySelectorAll('#q-table tbody tr');
+        let shown = 0;
+        rows.forEach(row => {
+            let show = true;
+            if (tier && row.dataset.tier !== tier) show = false;
+            if (blooms && row.dataset.blooms !== blooms) show = false;
+            if (flagged === 'yes' && row.dataset.flagged !== 'yes') show = false;
+            if (flagged === 'no' && row.dataset.flagged !== 'no') show = false;
+            row.style.display = show ? '' : 'none';
+            if (show) shown++;
+        });
+        document.getElementById('filter-count').textContent = `${shown} questions`;
+    }
+
+    let qSortDir = 1, qLastCol = -1;
+    function sortQTable(col) {
+        const table = document.querySelector('#q-table tbody');
+        const rows = Array.from(table.rows).filter(r => r.style.display !== 'none');
+        if (col === qLastCol) qSortDir *= -1; else qSortDir = 1;
+        qLastCol = col;
+        const allRows = Array.from(table.rows);
+        allRows.sort((a, b) => {
+            let va = a.cells[col].textContent.trim();
+            let vb = b.cells[col].textContent.trim();
+            const na = parseFloat(va.replace('%', '').replace('/', '.'));
+            const nb = parseFloat(vb.replace('%', '').replace('/', '.'));
+            if (!isNaN(na) && !isNaN(nb)) return (na - nb) * qSortDir;
+            if (va === '-') return 1 * qSortDir;
+            if (vb === '-') return -1 * qSortDir;
+            return va.localeCompare(vb) * qSortDir;
+        });
+        allRows.forEach(r => table.appendChild(r));
+    }
+
+    applyFilters();
+    </script>
+</body>
+</html>

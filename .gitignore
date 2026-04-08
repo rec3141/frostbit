@@ -1,0 +1,29 @@
+.venv/
+__pycache__/
+*.pyc
+.env.local
+.flask_secret
+frostbit.db
+cat_sessions.db
+*.partial.json
+
+# Exam build artifacts (keep final bank.json)
+exams/*/generated_questions/
+exams/*/validation_results/
+exams/*/calibration_results/
+exams/*/build.log
+exams/*/blooms_checkpoint.json
+
+# Legacy files from ENVR3140 development
+generated_questions/
+validation_results/
+calibration_results/
+lm_exam_results/
+lm_run.log
+filter_stats.json
+exam_bank_full.json
+exam_bank_calibrated.json
+exam_compact.json
+difficulty_boxplot.png
+gen_vs_val_difficulty.png
+ENVR3140_Bonus_Exam_*.xlsx

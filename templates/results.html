@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ENVR3140 Exam Results</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="card results-card">
+            <h1>Exam Complete</h1>
+            <p class="student-name-result">{{ student_name }}</p>
+
+            <div class="results-grid" id="results-grid">
+                <div class="result-stat">
+                    <span class="stat-value" id="stat-score">--</span>
+                    <span class="stat-label">Challenge Level</span>
+                </div>
+                <div class="result-stat">
+                    <span class="stat-value" id="stat-correct">--</span>
+                    <span class="stat-label">Questions Correct</span>
+                </div>
+                <div class="result-stat">
+                    <span class="stat-value" id="stat-pct">--</span>
+                    <span class="stat-label">Accuracy</span>
+                </div>
+            </div>
+
+            <h2>Performance by Difficulty</h2>
+            <div class="tier-breakdown" id="tier-breakdown"></div>
+
+            <h2>Ability Trajectory</h2>
+            <div class="chart-container">
+                <canvas id="theta-chart" width="600" height="250"></canvas>
+            </div>
+
+            <a href="/exam/{{ exam.id }}" class="btn btn-secondary" style="margin-top:2rem">Return to Start</a>
+        </div>
+    </div>
+
+    <script>
+    async function loadResults() {
+        const resp = await fetch("/api/results");
+        const data = await resp.json();
+
+        // Linear map: theta [-3, 3] -> skill [1, 5]
+        const clamped = Math.min(3, Math.max(-3, data.theta));
+        const skill = 1 + (clamped + 3) * (4 / 6);
+        document.getElementById("stat-score").textContent = skill.toFixed(1) + " / 5";
+        document.getElementById("stat-correct").textContent =
+            `${data.correct}/${data.total_questions}`;
+        document.getElementById("stat-pct").textContent = data.raw_percent + "%";
+
+        // Tier breakdown
+        const tierDiv = document.getElementById("tier-breakdown");
+        for (const [tier, stats] of Object.entries(data.tier_breakdown)) {
+            const pct = stats.total > 0 ? Math.round(100 * stats.correct / stats.total) : 0;
+            tierDiv.innerHTML += `
+                <div class="tier-row">
+                    <span class="tier-name">${tier}</span>
+                    <div class="tier-bar-bg">
+                        <div class="tier-bar" style="width:${pct}%"></div>
+                    </div>
+                    <span class="tier-pct">${stats.correct}/${stats.total} (${pct}%)</span>
+                </div>`;
+        }
+
+        // Theta trajectory chart (simple canvas)
+        drawChart(data.theta_history);
+    }
+
+    function drawChart(history) {
+        const canvas = document.getElementById("theta-chart");
+        const ctx = canvas.getContext("2d");
+        const W = canvas.width;
+        const H = canvas.height;
+        const pad = 40;
+
+        // Background
+        ctx.fillStyle = "#fafafa";
+        ctx.fillRect(0, 0, W, H);
+
+        if (history.length < 2) return;
+
+        const thetas = history.map(h => h.theta);
+        const minT = Math.min(-2, ...thetas) - 0.5;
+        const maxT = Math.max(2, ...thetas) + 0.5;
+
+        function x(i) { return pad + (i / (history.length - 1)) * (W - 2 * pad); }
+        function y(t) { return H - pad - ((t - minT) / (maxT - minT)) * (H - 2 * pad); }
+
+        // Zero line
+        ctx.strokeStyle = "#ccc";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(pad, y(0));
+        ctx.lineTo(W - pad, y(0));
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Line
+        ctx.strokeStyle = "#2563eb";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i < history.length; i++) {
+            const px = x(i);
+            const py = y(history[i].theta);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+
+        // Points
+        for (let i = 0; i < history.length; i++) {
+            const px = x(i);
+            const py = y(history[i].theta);
+            ctx.fillStyle = history[i].correct ? "#16a34a" : "#dc2626";
+            ctx.beginPath();
+            ctx.arc(px, py, 4, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Axes labels
+        ctx.fillStyle = "#666";
+        ctx.font = "12px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText("Question", W / 2, H - 5);
+        ctx.save();
+        ctx.translate(12, H / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText("Theta", 0, 0);
+        ctx.restore();
+    }
+
+    loadResults();
+    </script>
+</body>
+</html>

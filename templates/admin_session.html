@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ session.student_name }} — Session Detail</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="admin-container">
+        <div class="admin-header">
+            <h1>{{ session.student_name }} <span class="header-sub">({{ session.student_id }})</span></h1>
+            <div class="admin-nav">
+                <a href="/admin" class="nav-link">Back to Dashboard</a>
+            </div>
+        </div>
+
+        <!-- Summary stats -->
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="stat-number">{{ session.total_questions or '-' }}</div>
+                <div class="stat-desc">Questions</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ session.correct or '-' }}</div>
+                <div class="stat-desc">Correct</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ '%.0f%%'|format(session.correct / session.total_questions * 100) if session.total_questions else '-' }}</div>
+                <div class="stat-desc">Accuracy</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ '%.2f'|format(session.theta) if session.theta else '-' }}</div>
+                <div class="stat-desc">Final Theta</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ 'Done' if session.finished_at else 'Active' }}</div>
+                <div class="stat-desc">Status</div>
+            </div>
+        </div>
+
+        <!-- Theta trajectory chart -->
+        <div class="card">
+            <h3>Theta Trajectory</h3>
+            <canvas id="theta-chart" style="width:100%;height:200px"></canvas>
+        </div>
+
+        <!-- Response table -->
+        <div class="card">
+            <h3>Response Detail</h3>
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Item</th>
+                        <th>Question</th>
+                        <th>Tier</th>
+                        <th>Diff</th>
+                        <th>Chosen</th>
+                        <th>Answer</th>
+                        <th>Result</th>
+                        <th>Theta</th>
+                        <th>Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in responses %}
+                    <tr class="{{ 'row-correct' if r.correct else 'row-incorrect' }}">
+                        <td>{{ r.index }}</td>
+                        <td>{{ r.item_id }}</td>
+                        <td class="question-cell" title="{{ r.question }}">{{ r.question[:60] }}{% if r.question|length > 60 %}...{% endif %}</td>
+                        <td><span class="tier-tag tier-{{ r.tier }}">{{ r.tier }}</span></td>
+                        <td>{{ r.difficulty }}</td>
+                        <td>{{ r.chosen }}</td>
+                        <td>{{ r.correct_answer }}</td>
+                        <td>{{ 'O' if r.correct else 'X' }}</td>
+                        <td>{{ '%.2f'|format(r.theta_after) if r.theta_after else '-' }}</td>
+                        <td>{{ '%dm%02ds'|format(r.elapsed // 60, r.elapsed % 60) if r.elapsed else '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+    // Draw theta trajectory
+    const responses = {{ responses | tojson }};
+    const canvas = document.getElementById('theta-chart');
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+    const W = rect.width, H = rect.height;
+    const pad = {top: 15, right: 20, bottom: 25, left: 40};
+
+    if (responses.length > 1) {
+        const thetas = responses.map(r => r.theta_after).filter(t => t !== null);
+        const minT = Math.min(...thetas) - 0.3;
+        const maxT = Math.max(...thetas) + 0.3;
+        const plotW = W - pad.left - pad.right;
+        const plotH = H - pad.top - pad.bottom;
+
+        function x(i) { return pad.left + (i / (responses.length - 1)) * plotW; }
+        function y(t) { return pad.top + plotH - ((t - minT) / (maxT - minT)) * plotH; }
+
+        // Zero line
+        if (minT < 0 && maxT > 0) {
+            ctx.strokeStyle = '#e5e7eb';
+            ctx.setLineDash([4, 3]);
+            ctx.beginPath(); ctx.moveTo(pad.left, y(0)); ctx.lineTo(W - pad.right, y(0)); ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // Line
+        ctx.strokeStyle = '#2563eb';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        responses.forEach((r, i) => {
+            if (r.theta_after === null) return;
+            const px = x(i), py = y(r.theta_after);
+            i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+
+        // Points
+        responses.forEach((r, i) => {
+            if (r.theta_after === null) return;
+            const px = x(i), py = y(r.theta_after);
+            ctx.fillStyle = '#fff';
+            ctx.beginPath(); ctx.arc(px, py, 4.5, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = r.correct ? '#16a34a' : '#dc2626';
+            ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI * 2); ctx.fill();
+        });
+
+        // Y ticks
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = '10px system-ui';
+        ctx.textAlign = 'right';
+        for (let t = Math.ceil(minT); t <= Math.floor(maxT); t++) {
+            ctx.fillText(t, pad.left - 5, y(t) + 3);
+        }
+
+        // X label
+        ctx.textAlign = 'center';
+        ctx.fillText('Question', W / 2, H - 3);
+    }
+    </script>
+</body>
+</html>
